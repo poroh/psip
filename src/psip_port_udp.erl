@@ -7,7 +7,7 @@
 %% SIP port
 %%
 
--module(psip_udp_port).
+-module(psip_port_udp).
 
 -behaviour(gen_server).
 -behaviour(psip_source).
@@ -47,8 +47,8 @@
                           {error, term()}.
 -type source_options() :: {inet:ip_address(), inet:port_number()}.
 -type start_opts() :: #{
-    listen_addr := inet:ip_address(),
-    listen_port := inet:port_number(),
+    listen_addr  => inet:ip_address(),
+    listen_port  => inet:port_number(),
     exposed_addr => inet:ip_address(),
     exposed_port => inet:port_number(),
     handler      => psip_handler:handler()
@@ -106,10 +106,8 @@ send_request(OutReq) ->
     {ok, NewState :: state()} | {error, Reason :: term()}.
 
 init(StartOpts) ->
-    #{
-        listen_addr := IPAddress,
-        listen_port := Port
-    } = StartOpts,
+    IPAddress = maps:get(listen_addr, StartOpts, psip_inet:first_non_loopack_address()),
+    Port = maps:get(listen_port, StartOpts, 5060),
     psip_log:notice("udp port: starting at ~s:~p", [inet:ntoa(IPAddress), Port]),
     ExposedIP = maps:get(exposed_addr, StartOpts, IPAddress),
     ExposedPort = maps:get(exposed_port, StartOpts, Port),

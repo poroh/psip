@@ -13,6 +13,7 @@ Processes (gen_servers):
 * SIP transactions
 * SIP dialogs
 * SIP B2BUAs
+* SIP transports
 
 gproc by Ulf Wiger is used as registry.
 

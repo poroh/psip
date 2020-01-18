@@ -49,7 +49,7 @@ request(SipMsg, UACCallBack) ->
 ack_request(SipMsg) ->
     Branch = ersip_branch:make_random(6),
     OutReq = ersip_request:new(SipMsg, Branch),
-    psip_udp_port:send_request(OutReq).
+    psip_port:send_request(OutReq).
 
 -spec cancel(id()) -> ok.
 cancel({uac_id, Trans}) ->
