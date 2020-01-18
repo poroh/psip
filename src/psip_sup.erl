@@ -49,12 +49,7 @@ init([]) ->
           period    => 5
          },
     ChildSpecs =
-        [#{id       => psip_udp_port,
-           start    => {psip_udp_port, start_link, []},
-           type     => worker,
-           restart  => permanent
-          },
-         #{id       => psip_trans_sup,
+        [#{id       => psip_trans_sup,
            start    => {psip_trans_sup, start_link, []},
            type     => supervisor,
            restart  => permanent

@@ -13,7 +13,7 @@
 -behaviour(psip_source).
 
 %% API
--export([start_link/0,
+-export([start_link/1,
          set_handler/1,
          local_uri/0,
          send_request/1
@@ -46,14 +46,21 @@
                           {error, {already_started, pid()}} |
                           {error, term()}.
 -type source_options() :: {inet:ip_address(), inet:port_number()}.
+-type start_opts() :: #{
+    listen_addr := inet:ip_address(),
+    listen_port := inet:port_number(),
+    exposed_addr => inet:ip_address(),
+    exposed_port => inet:port_number(),
+    handler      => psip_handler:handler()
+}.
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
--spec start_link() -> start_link_ret().
-start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+-spec start_link(start_opts()) -> start_link_ret().
+start_link(StartOpts) ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, StartOpts, []).
 
 -spec set_handler(psip_handler:handler()) -> ok.
 set_handler(Handler) ->
@@ -98,12 +105,15 @@ send_request(OutReq) ->
                       Extra :: term()) ->
     {ok, NewState :: state()} | {error, Reason :: term()}.
 
-init([]) ->
-    IPAddress = psip_config:listen_address(),
-    Port = psip_config:listen_port(),
+init(StartOpts) ->
+    #{
+        listen_addr := IPAddress,
+        listen_port := Port
+    } = StartOpts,
     psip_log:notice("udp port: starting at ~s:~p", [inet:ntoa(IPAddress), Port]),
-    ExposedIP = psip_config:exposed_address(),
-    ExposedPort = psip_config:exposed_port(),
+    ExposedIP = maps:get(exposed_addr, StartOpts, IPAddress),
+    ExposedPort = maps:get(exposed_port, StartOpts, Port),
+    Handler = maps:get(handler, StartOpts, undefined),
     psip_log:notice("udp port: using ~s:~p as external address", [inet:ntoa(ExposedIP), ExposedPort]),
     case gen_udp:open(Port, [binary, {ip, IPAddress}, {active, once}]) of
         {error, _} = Error ->
@@ -112,7 +122,8 @@ init([]) ->
         {ok, Socket} ->
             State = #state{local_ip = ExposedIP,
                            local_port = ExposedPort,
-                           socket = Socket},
+                           socket = Socket,
+                           handler = Handler},
             {ok, State}
     end.
 
