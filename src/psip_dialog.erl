@@ -35,7 +35,8 @@
 
 -record(state, {id :: ersip_dialog:id(),
                 dialog :: ersip_dialog:dialog(),
-                local_contact :: [ersip_hdr_contact:contact()]
+                local_contact :: [ersip_hdr_contact:contact()],
+                early_branch  :: ersip_branch:branch() | undefined
                }).
 -type state() :: #state{}.
 
@@ -156,7 +157,7 @@ uac_result(OutReq, TransResult) ->
 
 init({uas, RespSipMsg, ReqSipMsg}) ->
     {ok, DialogId} = ersip_sipmsg:dialog_id(uas, RespSipMsg),
-    gproc:add_local_name(DialogId),
+    gproc:add_local_name({?MODULE, DialogId}),
     State = #state{id     = DialogId,
                    dialog = ersip_dialog:uas_create(ReqSipMsg, RespSipMsg),
                    local_contact = ersip_sipmsg:get(contact, RespSipMsg)
@@ -165,13 +166,24 @@ init({uas, RespSipMsg, ReqSipMsg}) ->
     {ok, State};
 init({uac, OutReq, RespSipMsg}) ->
     {ok, DialogId} = ersip_sipmsg:dialog_id(uac, RespSipMsg),
+    EarlyBranch =
+        case ersip_status:response_type(ersip_sipmsg:status(RespSipMsg)) of
+            provisional ->
+                Branch = ersip_request:branch(OutReq),
+                BranchKey = ersip_branch:make_key(Branch),
+                gproc:add_local_name({?MODULE, BranchKey}),
+                Branch;
+            _ ->
+                undefined
+        end,
     case ersip_dialog:uac_new(OutReq, RespSipMsg) of
         {ok, Dialog} ->
             OutSipMsg = ersip_request:sipmsg(OutReq),
-            gproc:add_local_name(DialogId),
+            gproc:add_local_name({?MODULE, DialogId}),
             State = #state{id           = DialogId,
                            dialog       = Dialog,
-                           local_contact = ersip_sipmsg:get(contact, OutSipMsg)
+                           local_contact = ersip_sipmsg:get(contact, OutSipMsg),
+                           early_branch = EarlyBranch
                           },
             psip_log:debug("psip dialog: started by UAC with id: ~p", [DialogId]),
             {ok, State};
@@ -215,8 +227,14 @@ handle_cast({uac_early_trans_result, {message, RespSipMsg}}, #state{dialog = Dia
     case ersip_dialog:uac_update(RespSipMsg, Dialog) of
         terminate_dialog ->
             {stop, normal, State};
-        {ok, Dialog1} ->
-            NewState = State#state{dialog = Dialog1},
+        {ok, NewDialog} ->
+            NewState =
+                case need_unregister_branch_name(NewDialog, State) of
+                    false -> State#state{dialog = NewDialog};
+                    true ->
+                        gproc:unregister_name({n, l, {?MODULE, State#state.early_branch}}),
+                        State#state{dialog = NewDialog, early_branch = undefined}
+                end,
             {noreply, NewState}
     end;
 handle_cast({uac_trans_result, {stop, timeout}}, #state{} = State) ->
@@ -263,9 +281,9 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal implementation
 %%===================================================================
 
--spec find_dialog(ersip_dialog:id() | ersip_branch:branch()) -> {ok, pid()} | not_found.
-find_dialog(DialogId) ->
-    case gproc:lookup_local_name(DialogId) of
+-spec find_dialog(ersip_dialog:id() | ersip_branch:branch_key()) -> {ok, pid()} | not_found.
+find_dialog(Id) ->
+    case gproc:lookup_local_name({?MODULE, Id}) of
         Pid when is_pid(Pid) ->
             {ok, Pid};
         undefined ->
@@ -346,7 +364,8 @@ uac_no_dialog_result(OutReq, {stop, timeout} = TransResult) ->
     case need_create_dialog(ReqSipMsg) of
         true ->
             Branch = ersip_request:branch(OutReq),
-            case find_dialog(Branch) of
+            BranchKey = ersip_branch:make_key(Branch),
+            case find_dialog(BranchKey) of
                 not_found -> ok;
                 {ok, DialogPid} ->
                     uac_early_trans_result(DialogPid, TransResult)
@@ -409,3 +428,9 @@ request_type(SipMsg) ->
         false ->
             regular
     end.
+
+-spec need_unregister_branch_name(ersip_dialog:dialog(), state()) -> boolean().
+need_unregister_branch_name(_Dialog, #state{early_branch = undefined}) ->
+    false;
+need_unregister_branch_name(Dialog, #state{}) ->
+    not ersip_dialog:is_early(Dialog).

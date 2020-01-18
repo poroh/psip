@@ -18,6 +18,13 @@
          process_ack/2
         ]).
 
+-callback transp_request(ersip_msg:message(), any()) -> process_transaction | noreply.
+-callback transaction(psip_trans:trans(), ersip_sipmsg:sipmsg(), any()) -> process_uas | ok.
+-callback transaction_stop(psip_trans:trans(), any(), any()) -> ok.
+-callback uas_request(psip_uas:uas(), ersip_sipmsg:sipmsg(), any()) -> ok.
+-callback uas_cancel(psip_uas:id(), any()) -> ok.
+-callback process_ack(ersip_sipmsg:sipmsg(), any()) -> ok.
+
 -export_type([handler/0,
               transp_request_ret/0
              ]).
