@@ -1,9 +1,10 @@
 
 # Pirahã SIP
 
-This libary previously was part of piraha sip but now it is separate
-project that goal:
-* Create reasonable architecture
+This libary previously was part of piraha hunt group project but now
+it is separate project that pursue goals:
+
+* Create reasonable architecture for SIP applications
 * Provide high-level interface for writing SIP-aware programs
 
 ## Approach to design
