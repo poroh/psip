@@ -23,6 +23,8 @@
 -type client_trans_result() :: psip_trans:client_result().
 -type id() :: {uac_id, psip_trans:trans()}.
 
+-export_type([id/0, callback/0]).
+
 %%===================================================================
 %% API
 %%===================================================================

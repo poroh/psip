@@ -70,7 +70,7 @@ uas_request(UAS, ReqSipMsg, #handler{module = Mod, args = Args}) ->
 uas_cancel(UASId, #handler{module = Mod, args = Args}) ->
     Mod:uas_cancel(UASId, Args).
 
--spec process_ack(ersip_sipmsg:sipmsg(), handler()) -> any().
+-spec process_ack(ersip_sipmsg:sipmsg(), handler()) -> ok.
 process_ack(SipMsg, #handler{module = Mod, args = Args}) ->
     Mod:process_ack(SipMsg, Args).
 

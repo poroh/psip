@@ -70,7 +70,7 @@ uas_request(SipMsg) ->
         {ok, DialogId} ->
             case find_dialog(DialogId) of
                 not_found ->
-                    psip_log:warning("psip dialog: cannot find dialog ~p", [DialogId]),
+                    psip_log:warning("dialog: cannot find dialog ~p", [DialogId]),
                     Resp = ersip_sipmsg:reply(481, SipMsg),
                     {reply, Resp};
                 {ok, DialogPid} ->
@@ -162,7 +162,7 @@ init({uas, RespSipMsg, ReqSipMsg}) ->
                    dialog = ersip_dialog:uas_create(ReqSipMsg, RespSipMsg),
                    local_contact = ersip_sipmsg:get(contact, RespSipMsg)
                   },
-    psip_log:debug("psip dialog: started by UAS with id: ~p", [DialogId]),
+    psip_log:debug("dialog: started by UAS with id: ~p", [DialogId]),
     {ok, State};
 init({uac, OutReq, RespSipMsg}) ->
     {ok, DialogId} = ersip_sipmsg:dialog_id(uac, RespSipMsg),
@@ -185,10 +185,10 @@ init({uac, OutReq, RespSipMsg}) ->
                            local_contact = ersip_sipmsg:get(contact, OutSipMsg),
                            early_branch = EarlyBranch
                           },
-            psip_log:debug("psip dialog: started by UAC with id: ~p", [DialogId]),
+            psip_log:debug("dialog: started by UAC with id: ~p", [DialogId]),
             {ok, State};
         {error, _} = Error ->
-            psip_log:warning("psip dialog: cannot create dialog ~p", [Error]),
+            psip_log:warning("dialog: cannot create dialog, error: ~p", [Error]),
             {stop, Error}
     end.
 
@@ -215,11 +215,11 @@ handle_call({uac_request, SipMsg}, _From, #state{dialog = Dialog} = State) ->
     NewState  = State#state{dialog = NewDialog},
     {reply, {ok, DlgSipMsg1}, NewState};
 handle_call(Request, _From, State) ->
-    psip_log:error("psip dialog: unexpected call: ~p", [Request]),
+    psip_log:error("dialog: unexpected call: ~p", [Request]),
     {reply, {error, {unexpected_call, Request}}, State}.
 
 handle_cast({uac_early_trans_result, {stop, timeout}}, #state{} = State) ->
-    psip_log:warning("psip dialog: stopped because timeout", []),
+    psip_log:warning("dialog: stopped because timeout", []),
     {stop, normal, State};
 handle_cast({uac_early_trans_result, {stop, _}}, #state{} = State) ->
     {noreply, State};
@@ -238,13 +238,13 @@ handle_cast({uac_early_trans_result, {message, RespSipMsg}}, #state{dialog = Dia
             {noreply, NewState}
     end;
 handle_cast({uac_trans_result, {stop, timeout}}, #state{} = State) ->
-    psip_log:warning("psip dialog: stopped because timeout", []),
+    psip_log:warning("dialog: stopped because timeout", []),
     {stop, normal, State};
 handle_cast({uac_trans_result, {stop, _}}, #state{} = State) ->
     {noreply, State};
 handle_cast({uac_trans_result, {message, RespSipMsg}}, #state{dialog = Dialog} = State) ->
     ReqType = request_type(RespSipMsg),
-    psip_log:debug("psip dialog: transaction result ~p", [ReqType]),
+    psip_log:debug("dialog: transaction result: ~p", [ReqType]),
     case ersip_dialog:uac_trans_result(RespSipMsg, ReqType, Dialog) of
         terminate_dialog ->
             {stop, normal, State};
@@ -258,19 +258,19 @@ handle_cast({uac_trans_result, {message, RespSipMsg}}, #state{dialog = Dialog} =
             end
     end;
 handle_cast(Request, State) ->
-    psip_log:error("psip dialog: unexpected cast: ~p", [Request]),
+    psip_log:error("dialog: unexpected cast: ~p", [Request]),
     {noreply, State}.
 
 handle_info(Msg, State) ->
-    psip_log:error("psip dialog: unexpected info: ~p", [Msg]),
+    psip_log:error("dialog: unexpected info: ~p", [Msg]),
     {noreply, State}.
 
-terminate(Reason, #state{}) ->
+terminate(Reason, #state{id = DialogId}) ->
     case Reason of
         normal ->
-            psip_log:debug("psip dialog: finished", []);
+            psip_log:debug("dialog: finished, id: ~p", [DialogId]);
         _ ->
-            psip_log:error("psip dialog: finished with error: ~p", [Reason])
+            psip_log:error("dialog: finished with error: ~p, id: ~p", [Reason, DialogId])
     end,
     ok.
 
@@ -322,7 +322,7 @@ uas_start_dialog(RespSipMsg, ReqSipMsg) ->
         {ok, DialogPid} ->
             uas_pass_response(DialogPid, RespSipMsg, ReqSipMsg);
         {error, _} = Error ->
-            psip_log:error("failed to start dialog ~p", [Error]),
+            psip_log:error("dialog: failed to start ~p", [Error]),
             RespSipMsg
     end.
 
@@ -332,7 +332,7 @@ uac_start_dialog(OutReq, RespSipMsg) ->
     case psip_dialog_sup:start_child([InitArgs]) of
         {ok, _} -> ok;
         {error, _} = Error ->
-            psip_log:error("failed to start dialog ~p", [Error]),
+            psip_log:error("dialog: failed to start dialog ~p", [Error]),
             ok
     end.
 
@@ -416,7 +416,7 @@ maybe_set_contact(SipMsg, #state{local_contact = LocalContact}) ->
         not_found ->
             ersip_sipmsg:set(contact, LocalContact, SipMsg);
         {error, _} = Error ->
-            psip_log:error("overriding SIP message has bad contact: ~p", [Error]),
+            psip_log:error("dialog: overriding SIP message has bad contact: ~p", [Error]),
             ersip_sipmsg:set(contact, LocalContact, SipMsg)
     end.
 

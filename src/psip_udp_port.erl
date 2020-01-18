@@ -101,13 +101,13 @@ send_request(OutReq) ->
 init([]) ->
     IPAddress = psip_config:listen_address(),
     Port = psip_config:listen_port(),
-    psip_log:notice("psip udp port: starting at ~s:~p", [inet:ntoa(IPAddress), Port]),
+    psip_log:notice("udp port: starting at ~s:~p", [inet:ntoa(IPAddress), Port]),
     ExposedIP = psip_config:exposed_address(),
     ExposedPort = psip_config:exposed_port(),
-    psip_log:notice("psip udp port: using ~s:~p as external address", [inet:ntoa(ExposedIP), ExposedPort]),
+    psip_log:notice("udp port: using ~s:~p as external address", [inet:ntoa(ExposedIP), ExposedPort]),
     case gen_udp:open(Port, [binary, {ip, IPAddress}, {active, once}]) of
         {error, _} = Error ->
-            psip_log:error("psip udp port: failed to open port: ~p", [Error]),
+            psip_log:error("udp port: failed to open port: ~p", [Error]),
             {stop, Error};
         {ok, Socket} ->
             State = #state{local_ip = ExposedIP,
@@ -124,17 +124,17 @@ handle_call(local_uri, _From, #state{local_ip = LocalIP, local_port = LocalPort}
                           {port, LocalPort}]),
     {reply, URI, State};
 handle_call(Request, _From, State) ->
-    psip_log:error("psip udp port: unexpected call: ~p", [Request]),
+    psip_log:error("udp port: unexpected call: ~p", [Request]),
     {reply, {error, {unexpected_call, Request}}, State}.
 
 handle_cast({send_response, SipMsg, RemoteAddr, RemotePort}, State) ->
     Msg = ersip_sipmsg:assemble(SipMsg),
-    psip_log:debug("psip udp port: send message to ~s:~p:~n~s",
+    psip_log:debug("udp port: send message to ~s:~p:~n~s",
                    [inet:ntoa(RemoteAddr), RemotePort, Msg]),
     case gen_udp:send(State#state.socket, RemoteAddr, RemotePort, Msg) of
         ok -> ok;
         {error, _} = Error ->
-            psip_log:warning("psip udp port: failed to send message: ~p", [Error]),
+            psip_log:warning("udp port: failed to send message: ~p", [Error]),
             ok
     end,
     {noreply, State};
@@ -152,7 +152,7 @@ handle_cast({send_request, OutReq}, State) ->
             false ->
                 case ersip_uri:port(NextHop) of
                     undefined ->
-                        psip_log:warning("psip udp port: srv DNS lookup is not supported yet", []),
+                        psip_log:warning("udp port: srv DNS lookup is not supported yet", []),
                         {{240, 0, 0, 1}, 5060};
                     Port ->
                         HostStr = binary_to_list(ersip_host:assemble_bin(Host)),
@@ -160,7 +160,7 @@ handle_cast({send_request, OutReq}, State) ->
                             [IP | _Rest] ->
                                 {IP, Port};
                             [] ->
-                                psip_log:warning("psip udp port: DNS lookup failed: ~s", [HostStr]),
+                                psip_log:warning("udp port: DNS lookup failed: ~s", [HostStr]),
                                 {{240, 0, 0, 1}, 5060}
                         end
                 end
@@ -172,33 +172,33 @@ handle_cast({send_request, OutReq}, State) ->
                           ersip_transport:udp(),
                           #{}),
     Msg = ersip_request:send_via_conn(OutReq, Conn),
-    psip_log:debug("psip udp port: send message to ~s:~p:~n~s",
+    psip_log:debug("udp port: send message to ~s:~p:~n~s",
                    [inet:ntoa(RemoteIP), RemotePort, Msg]),
     case gen_udp:send(State#state.socket, RemoteIP, RemotePort, Msg) of
         ok -> ok;
         {error, _} = Error ->
-            psip_log:warning("psip udp port: failed to send message: ~p", [Error]),
+            psip_log:warning("udp port: failed to send message: ~p", [Error]),
             ok
     end,
     {noreply, State};
 handle_cast(Request, State) ->
-    psip_log:error("psip udp port: unexpected cast: ~p", [Request]),
+    psip_log:error("udp port: unexpected cast: ~p", [Request]),
     {noreply, State}.
 
 handle_info({udp, Socket, IP, Port, Msg}, #state{socket=Socket} = State) ->
-    psip_log:debug("psip udp port: new message:~n~s", [Msg]),
+    psip_log:debug("udp port: new message:~n~s", [Msg]),
     recv_message(IP, Port, Msg, State),
     ok = inet:setopts(Socket, [{active, once}]),
     {noreply, State};
 handle_info(Msg, State) ->
-    psip_log:error("psip udp port: unexpected info: ~p", [Msg]),
+    psip_log:error("udp port: unexpected info: ~p", [Msg]),
     {noreply, State}.
 
 terminate(normal, #state{socket = Socket}) ->
-    psip_log:notice("psip udp port: stopped", []),
+    psip_log:notice("udp port: stopped", []),
     gen_udp:close(Socket);
 terminate(Reason, #state{socket = Socket}) ->
-    psip_log:error("psip udp port: stopped with reason ~p", [Reason]),
+    psip_log:error("udp port: stopped with reason ~p", [Reason]),
     gen_udp:close(Socket).
 
 code_change(_OldVsn, State, _Extra) ->
@@ -239,14 +239,14 @@ process_side_effects([E|Rest], State) ->
 
 -spec process_side_effect(ersip_conn_se:side_effect(), state()) -> ok.
 process_side_effect({bad_message, Data, Error}, _State) when is_binary(Data) ->
-    psip_log:warning("psip udp port: bad message received: ~p~n~s", [Error, Data]);
+    psip_log:warning("udp port: bad message received: ~p~n~s", [Error, Data]);
 process_side_effect({bad_message, Data, Error}, _State) ->
-    psip_log:warning("psip udp port: bad message received: ~p~n~s", [Error, ersip_msg:serialize(Data)]);
+    psip_log:warning("udp port: bad message received: ~p~n~s", [Error, ersip_msg:serialize(Data)]);
 process_side_effect({new_request, Msg}, State) ->
-    psip_log:debug("psip udp port: process new request", []),
+    psip_log:debug("udp port: process new request", []),
     case State#state.handler of
         undefined ->
-            psip_log:warning("psip udp port: no handlers defined for requests", []),
+            psip_log:warning("udp port: no handlers defined for requests", []),
             %% Send 503, expect that handler will appear
             unavailable_resp(Msg),
             ok;
@@ -258,7 +258,7 @@ process_side_effect({new_request, Msg}, State) ->
             end
     end;
 process_side_effect({new_response, Via, Msg}, _State) ->
-    psip_log:debug("psip udp port: process new response", []),
+    psip_log:debug("udp port: process new response", []),
     psip_trans:client_response(Via, Msg).
 
 
@@ -273,5 +273,5 @@ unavailable_resp(Msg) ->
             Resp = ersip_sipmsg:reply(503, SipMsg),
             psip_source:send_response(Resp, SipMsg);
         {error, _} = Error ->
-            psip_log:warning("psip udp port: cannot parse message: ~p", [Error])
+            psip_log:warning("udp port: cannot parse message: ~p", [Error])
     end.
