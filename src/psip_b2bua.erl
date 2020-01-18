@@ -135,7 +135,8 @@ handle_cast({pass, SrcDialogId, UAS}, #state{} = State) ->
     psip_log:debug("b2bua: passing ~s to: ~p", [ersip_sipmsg:method_bin(SipMsg), DstDialogId]),
     case psip_dialog:uac_request(DstDialogId, SipMsg) of
         {ok, DstSipMsg} ->
-            psip_uac:request(DstSipMsg, make_req_callback(UAS));
+            _ = psip_uac:request(DstSipMsg, make_req_callback(UAS)),
+            ok;
         {error, _} = Error ->
             psip_log:warning("b2bua: cannot pass message: ~p", [Error])
     end,

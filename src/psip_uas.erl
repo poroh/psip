@@ -17,7 +17,7 @@
          sipmsg/1,
          make_reply/3
         ]).
--export_type([uas/0]).
+-export_type([uas/0, id/0]).
 
 %%===================================================================
 %% Types
@@ -28,13 +28,13 @@
               resp_tag :: ersip_hdr_fromto:tag()
              }).
 -type uas() :: #uas{}.
--type uas_id() :: {uas_id, psip_trans:trans()}.
+-type id()  :: {uas_id, psip_trans:trans()}.
 
 %%===================================================================
 %% API
 %%===================================================================
 
--spec id(uas()) -> uas_id().
+-spec id(uas()) -> id().
 id(#uas{trans = Trans}) ->
     {uas_id, Trans}.
 
@@ -133,8 +133,8 @@ check_scheme(_) -> false.
 -spec do_process([Fun], ersip_sipmsg:sipmsg())
                 -> ok | {reply, ersip_sipmsg:sipmsg()} when
       Fun :: fun((ersip_sipmsg:sipmsg())
-                 -> ok  | {process, ersip_sipmsg:ersip_sipmsg()}
-                        | {reply, ersip_sipmsg:ersip_sipmsg()}).
+                 -> ok  | {process, ersip_sipmsg:sipmsg()}
+                        | {reply, ersip_sipmsg:sipmsg()}).
 do_process([], _) ->
     ok;
 do_process([F | Rest], SipMsg) ->

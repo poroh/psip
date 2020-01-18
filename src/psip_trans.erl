@@ -27,7 +27,7 @@
          terminate/2,
          code_change/3]).
 
--export_type([trans/0]).
+-export_type([trans/0, client_result/0]).
 
 %%===================================================================
 %% Types
@@ -52,9 +52,9 @@
                           {error, {already_started, pid()}} |
                           {error, term()}.
 -type trans() :: {trans, pid()}.
--type client_callback() :: fun((trans_result()) -> any()).
--type trans_result() :: {stop, stop_reason()}
-                      | {message, ersip_sipmsg:sipmsg()}.
+-type client_callback() :: fun((client_result()) -> any()).
+-type client_result()   :: {stop, stop_reason()}
+                         | {message, ersip_sipmsg:sipmsg()}.
 -type stop_reason() :: ersip_trans_se:clear_reason().
 
 %%===================================================================
@@ -221,7 +221,7 @@ handle_cast(cancel, #state{data = #client{} = Data} = State) ->
     psip_log:debug("psip trans: canceling client transaction", []),
     #client{outreq = OutReq} = Data,
     CancelReq = ersip_request_cancel:generate(OutReq),
-    client_new(CancelReq, fun(_) -> ok end),
+    _ = client_new(CancelReq, fun(_) -> ok end),
     {noreply, State};
 handle_cast({received, _} = Ev, #state{trans = Trans} = State) ->
     psip_log:debug("psip trans: received message", []),
@@ -277,7 +277,7 @@ find_server(SipMsg) ->
             error
     end.
 
--spec process_se_list([ersip_trans_se:side_effect()], state()) -> continue | stop.
+-spec process_se_list([ersip_trans_se:effect()], state()) -> continue | stop.
 process_se_list([], #state{}) ->
     continue;
 process_se_list([SE | Rest], #state{} = State) ->
@@ -287,7 +287,7 @@ process_se_list([SE | Rest], #state{} = State) ->
             process_se_list(Rest, State)
     end.
 
--spec process_se(ersip_trans_se:side_effect(), state()) -> continue | stop.
+-spec process_se(ersip_trans_se:effect(), state()) -> continue | stop.
 process_se({tu_result, SipMsg}, #state{data = #server{handler = Handler}}) ->
     case psip_handler:transaction(make_trans(), SipMsg, Handler) of
         ok -> ok;

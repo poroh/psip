@@ -18,6 +18,15 @@
 -define(ENV_VAR_EXPOSED_ADDR, "EXPOSED_ADDR").
 -define(ENV_VAR_EXPOSED_PORT, "EXPOSED_PORT").
 
+-type getifaddrs_ifopts() ::
+    [Ifopt :: {flags, Flags :: [up | broadcast | loopback |
+    pointtopoint | running | multicast]} |
+    {addr, Addr :: inet:ip_address()} |
+    {netmask, Netmask :: inet:ip_address()} |
+    {broadaddr, Broadaddr :: inet:ip_address()} |
+    {dstaddr, Dstaddr :: inet:ip_address()} |
+    {hwaddr, Hwaddr :: [byte()]}].
+
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -93,11 +102,11 @@ first_address(IfName, Type) ->
         ip6 -> hd([A || {_, _, _, _, _, _, _, _} = A <- Addrs])
     end.
 
--spec is_loopback(inet:getifaddrs_ifopts()) -> boolean().
+-spec is_loopback(getifaddrs_ifopts()) -> boolean().
 is_loopback(Props) ->
     Flags = proplists:get_value(flags, Props),
     lists:member(loopback, Flags).
 
--spec has_address(inet:getifaddrs_ifopts()) -> boolean().
+-spec has_address(getifaddrs_ifopts()) -> boolean().
 has_address(Props) ->
     proplists:get_value(addr, Props) /= undefined.

@@ -106,7 +106,7 @@ uac_request(DialogId, SipMsg) ->
             {error, no_dialog}
     end.
 
--spec uac_result(ersip_request:request(), ersip_trans:trans_result()) -> ok.
+-spec uac_result(ersip_request:request(), ersip_trans:result()) -> ok.
 uac_result(OutReq, TransResult) ->
     case ersip_request:dialog_id(OutReq) of
         no_dialog ->
@@ -332,15 +332,15 @@ uas_pass_response(DialogPid, RespSipMsg, ReqSipMsg) ->
 need_create_dialog(ReqSipMsg) ->
     ersip_sipmsg:method(ReqSipMsg) == ersip_method:invite().
 
--spec uac_trans_result(pid(), psip_trans:trans_result()) -> ok.
+-spec uac_trans_result(pid(), psip_trans:client_result()) -> ok.
 uac_trans_result(DialogPid, TransResult) ->
     gen_server:cast(DialogPid, {uac_trans_result, TransResult}).
 
--spec uac_early_trans_result(pid(), psip_trans:trans_result()) -> ok.
+-spec uac_early_trans_result(pid(), psip_trans:client_result()) -> ok.
 uac_early_trans_result(DialogPid, TransResult) ->
     gen_server:cast(DialogPid, {uac_early_trans_result, TransResult}).
 
--spec uac_no_dialog_result(ersip_request:request(), psip_trans:trans_result()) -> ok.
+-spec uac_no_dialog_result(ersip_request:request(), psip_trans:client_result()) -> ok.
 uac_no_dialog_result(OutReq, {stop, timeout} = TransResult) ->
     ReqSipMsg = ersip_request:sipmsg(OutReq),
     case need_create_dialog(ReqSipMsg) of
