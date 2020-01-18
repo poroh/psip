@@ -263,7 +263,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal implementation
 %%===================================================================
 
--spec find_dialog(ersip_dialog:id()) -> {ok, pid()} | not_found.
+-spec find_dialog(ersip_dialog:id() | ersip_branch:branch()) -> {ok, pid()} | not_found.
 find_dialog(DialogId) ->
     case gproc:lookup_local_name(DialogId) of
         Pid when is_pid(Pid) ->

@@ -169,6 +169,8 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal implementation
 %%===================================================================
 
+-type req_callback() :: fun(({message, ersip_sipmsg:sipmsg()} | {stop, term}) -> ok).
+
 -spec find_b2bua(ersip_dialog:id()) -> {ok, pid()} | not_found.
 find_b2bua(DialogId) ->
     case gproc:lookup_local_name({b2bua, DialogId}) of
@@ -184,7 +186,7 @@ another_dialog_id(A, {A, B}) ->
 another_dialog_id(B, {A, B}) ->
     A.
 
--spec make_req_callback(psip_uas:uas()) -> psip_uas:uas().
+-spec make_req_callback(psip_uas:uas()) -> req_callback().
 make_req_callback(UAS) ->
     fun({message, RespSipMsg}) ->
             OutResp = pass_response(RespSipMsg, UAS),

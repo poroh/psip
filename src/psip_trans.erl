@@ -145,12 +145,11 @@ client_cancel({trans, Pid}) ->
 -spec init(Args :: term()) ->
     {ok, State :: state()} | {ok, State :: state(), timeout() | hibernate | {continue, term()}} |
     {stop, Reason :: term()} | ignore.
--spec handle_call(Request :: term(), From :: {pid(), Tag :: term()},
-                      State :: state()) ->
+-spec handle_call(Request :: term(), From :: {pid(), Tag :: term()}, State :: state()) ->
     {reply, Reply :: term(), NewState :: state()} |
-    {reply, Reply :: term(), NewState :: state(), timeout() | hibernate | {continue, term()}} |
+    {reply, Reply :: term(), NewState :: state(), timeout() | hibernate} |
     {noreply, NewState :: state()} |
-    {noreply, NewState :: state(), timeout() | hibernate | {continue, term()}} |
+    {noreply, NewState :: state(), timeout() | hibernate} |
     {stop, Reason :: term(), Reply :: term(), NewState :: state()} |
     {stop, Reason :: term(), NewState :: state()}.
 -spec handle_cast(Request :: term(), State :: state()) ->

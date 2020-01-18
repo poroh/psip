@@ -92,7 +92,7 @@ process_cancel(Trans, Handler) ->
     %% TODO: in-dialog CANCEL?
     psip_handler:uas_cancel(Id, Handler).
 
--spec response(ersip_sipmsg:sipmsg(), psip_trans:trans()) -> ok.
+-spec response(ersip_sipmsg:sipmsg(), uas()) -> ok.
 response(RespSipMsg0, #uas{trans = Trans, req = ReqSipMsg}) ->
     RespSipMsg = psip_dialog:uas_response(RespSipMsg0, ReqSipMsg),
     psip_trans:server_response(RespSipMsg, Trans).
