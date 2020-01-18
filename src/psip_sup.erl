@@ -64,8 +64,8 @@ init([]) ->
            type     => supervisor,
            restart  => permanent
           },
-         #{id       => psip_port_sup,
-           start    => {psip_port_sup, start_link, []},
+         #{id       => psip_tport_sup,
+           start    => {psip_tport_sup, start_link, []},
            type     => supervisor,
            restart  => permanent
           }

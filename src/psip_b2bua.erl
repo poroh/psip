@@ -212,7 +212,7 @@ pass_response(InResp, UAS) ->
                            OutResp0,
                            CopyHdrs),
 
-    URI = psip_port:local_uri(OutResp1),
+    URI = psip_tport:local_uri(OutResp1),
     Contact = ersip_hdr_contact:new(URI),
     OutResp2 = ersip_sipmsg:set(contact, [Contact], OutResp1),
 
@@ -224,6 +224,6 @@ pass_request(SipMsg0) ->
     %% Remove routing info
     SipMsg1 = ersip_sipmsg:remove_list([<<"via">>, route, record_route], SipMsg0),
     %% Generate Contact:
-    URI = psip_port:local_uri(SipMsg1),
+    URI = psip_tport:local_uri(SipMsg1),
     Contact = ersip_hdr_contact:new(URI),
     ersip_sipmsg:set(contact, [Contact], SipMsg1).

@@ -7,7 +7,7 @@
 %% SIP port
 %%
 
--module(psip_port_udp).
+-module(psip_tport_udp).
 
 -behaviour(gen_server).
 -behaviour(psip_source).

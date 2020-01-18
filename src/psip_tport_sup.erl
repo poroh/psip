@@ -7,7 +7,7 @@
 %%% Port supervisor
 %%%
 
--module(psip_port_sup).
+-module(psip_tport_sup).
 
 -behaviour(supervisor).
 
@@ -61,8 +61,8 @@ init([]) ->
           period    => 1
          },
     ChildSpecs =
-        [#{id      => psip_port,
-           start   => {psip_port, start_link, []},
+        [#{id      => psip_tport,
+           start   => {psip_tport, start_link, []},
            type    => worker,
            restart => temporary
           }

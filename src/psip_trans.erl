@@ -315,7 +315,7 @@ process_se({clear_trans, Reason}, #state{data = #client{callback = Callback}}) -
     stop;
 process_se({send_request, OutReq}, #state{}) ->
     psip_log:debug("trans: sending request", []),
-    psip_port:send_request(OutReq),
+    psip_tport:send_request(OutReq),
     continue;
 process_se({send_response, Response}, #state{data = #server{origmsg = ReqSipMsg}}) ->
     psip_log:debug("trans: sending response", []),
