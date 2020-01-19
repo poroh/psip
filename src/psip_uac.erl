@@ -22,7 +22,6 @@
 -type callback() :: fun((client_trans_result()) -> any()).
 -type client_trans_result() :: psip_trans:client_result().
 -type id() :: {uac_id, psip_trans:trans()}.
-
 -export_type([id/0, callback/0]).
 
 %%===================================================================
@@ -49,7 +48,7 @@ request(SipMsg, UACCallBack) ->
 ack_request(SipMsg) ->
     Branch = ersip_branch:make_random(6),
     OutReq = ersip_request:new(SipMsg, Branch),
-    psip_tport:send_request(OutReq).
+    psip_tport:send_request(undefined, OutReq).
 
 -spec cancel(id()) -> ok.
 cancel({uac_id, Trans}) ->

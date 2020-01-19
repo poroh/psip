@@ -34,8 +34,9 @@
 %%===================================================================
 
 -record(state,
-        {trans   :: ersip_trans:trans(),
-         data    :: server() | client()
+        {trans    :: ersip_trans:trans(),
+         data     :: server() | client(),
+         tport_id :: psip_tport:id() | undefined
         }).
 -type state() :: #state{}.
 
@@ -313,9 +314,9 @@ process_se({clear_trans, Reason}, #state{data = #client{callback = Callback}}) -
     psip_log:debug("trans: client transaction cleared: ~p", [Reason]),
     Callback({stop, Reason}),
     stop;
-process_se({send_request, OutReq}, #state{}) ->
+process_se({send_request, OutReq}, #state{tport_id = TPortId}) ->
     psip_log:debug("trans: sending request", []),
-    psip_tport:send_request(OutReq),
+    psip_port:send_request(TPortId, OutReq),
     continue;
 process_se({send_response, Response}, #state{data = #server{origmsg = ReqSipMsg}}) ->
     psip_log:debug("trans: sending response", []),

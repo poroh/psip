@@ -13,11 +13,13 @@
 -behaviour(psip_source).
 
 %% API
--export([start_link/1,
+-export([start_link/2,
+         stop/1,
          set_handler/1,
-         local_uri/0,
-         send_request/1
+         local_uri/1,
+         send_request/2
         ]).
+-export_type([start_opts/0]).
 
 %% gen_server
 -export([init/1,
@@ -58,21 +60,25 @@
 %%% API
 %%%===================================================================
 
--spec start_link(start_opts()) -> start_link_ret().
-start_link(StartOpts) ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, StartOpts, []).
+-spec start_link(psip_tport:id(), start_opts()) -> start_link_ret().
+start_link(Id, StartOpts) ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [Id, StartOpts], []).
+
+-spec stop(pid()) -> ok.
+stop(Pid) ->
+    gen_server:stop(Pid).
 
 -spec set_handler(psip_handler:handler()) -> ok.
 set_handler(Handler) ->
     gen_server:call(?SERVER, {set_handler, Handler}).
 
--spec local_uri() -> ersip_uri:uri().
-local_uri() ->
-    gen_server:call(?SERVER, local_uri).
+-spec local_uri(pid()) -> ersip_uri:uri().
+local_uri(Pid) ->
+    gen_server:call(Pid, local_uri).
 
--spec send_request(ersip_request:request()) -> ok.
-send_request(OutReq) ->
-    gen_server:cast(?SERVER, {send_request, OutReq}).
+-spec send_request(pid(), ersip_request:request()) -> ok.
+send_request(Pid, OutReq) ->
+    gen_server:cast(Pid, {send_request, OutReq}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -105,10 +111,11 @@ send_request(OutReq) ->
                       Extra :: term()) ->
     {ok, NewState :: state()} | {error, Reason :: term()}.
 
-init(StartOpts) ->
+init([Id, StartOpts]) ->
+    psip_tport_table:register(Id, ersip_transport:udp(), ?MODULE),
     IPAddress = maps:get(listen_addr, StartOpts, psip_inet:first_non_loopack_address()),
     Port = maps:get(listen_port, StartOpts, 5060),
-    psip_log:notice("udp port: starting at ~s:~p", [inet:ntoa(IPAddress), Port]),
+    psip_log:notice("udp port: starting at ~s:~p; id: ~p", [inet:ntoa(IPAddress), Port, Id]),
     ExposedIP = maps:get(exposed_addr, StartOpts, IPAddress),
     ExposedPort = maps:get(exposed_port, StartOpts, Port),
     Handler = maps:get(handler, StartOpts, undefined),
