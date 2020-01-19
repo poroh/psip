@@ -10,7 +10,7 @@
 -module(psip_tport).
 
 -export([start_udp/1,
-         local_uri/1,
+         local_uri/0,
          send_request/1]).
 -export([start_link/2]).
 -export_type([tport/0]).
@@ -40,8 +40,8 @@ start_udp(UdpStartOpts) ->
             Error
     end.
 
--spec local_uri(ersip_sipmsg:sipmsg()) -> ersip_uri:uri().
-local_uri(_SipMsg) ->
+-spec local_uri() -> ersip_uri:uri().
+local_uri() ->
     psip_tport_udp:local_uri().
 
 -spec send_request(ersip_request:request()) -> ok.
