@@ -14,10 +14,13 @@
 
 %% API
 -export([start_link/1,
+         stop/0,
          set_handler/1,
          local_uri/0,
          send_request/1
         ]).
+
+-export_type([start_opts/0]).
 
 %% gen_server
 -export([init/1,
@@ -61,6 +64,10 @@
 -spec start_link(start_opts()) -> start_link_ret().
 start_link(StartOpts) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, StartOpts, []).
+
+-spec stop() -> ok.
+stop() ->
+    gen_server:stop(?SERVER).
 
 -spec set_handler(psip_handler:handler()) -> ok.
 set_handler(Handler) ->

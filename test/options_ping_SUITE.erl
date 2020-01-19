@@ -25,12 +25,11 @@ end_per_suite(Config) ->
     Config.
 
 init_per_testcase(_TestCase, Config) ->
-    {ok, Port} = psip_tport:start_udp(#{}),
-    [{udp_port, Port} | Config].
+    ok = psip_tport:start_udp(#{}),
+    Config.
 
-end_per_testcase(_TestCase, Config) ->
-    Port = proplists:get_value(udp_port, Config),
-    psip_tport:stop(Port),
+end_per_testcase(_TestCase, _Config) ->
+    psip_tport:stop_udp(),
     ok.
 
 ping_udp(_Config) ->
