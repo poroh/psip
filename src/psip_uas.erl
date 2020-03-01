@@ -42,7 +42,7 @@ id(#uas{trans = Trans}) ->
 process(Trans, SipMsg0, Handler) ->
     Process =
         [fun(SipMsg) ->
-                 ersip_uas:process_request(SipMsg, allowed_methods(), uas_options())
+                 ersip_uas:process_request(SipMsg, psip_config:allowed_methods(), psip_config:uas_options())
          end,
          fun(SipMsg) ->
                  case psip_dialog:uas_request(SipMsg) of
@@ -111,24 +111,11 @@ make_reply(Code, ReasonPhrase, #uas{resp_tag = Tag}) ->
 %% Internal implementation
 %%===================================================================
 
--spec uas_options() -> ersip_uas:options().
-uas_options() ->
-    #{check_scheme => fun check_scheme/1}.
-
-allowed_methods() ->
-    ersip_method_set:invite_set().
-
 make_uas(ReqSipMsg, Trans) ->
     #uas{trans = Trans,
          req = ReqSipMsg,
          resp_tag = {tag, ersip_id:token(crypto:strong_rand_bytes(6))}
         }.
-
--spec check_scheme(binary()) -> boolean().
-check_scheme(<<"sip">>) -> true;
-check_scheme(<<"sips">>) -> true;
-check_scheme(<<"tel">>) -> true;
-check_scheme(_) -> false.
 
 -spec do_process([Fun], ersip_sipmsg:sipmsg())
                 -> ok | {reply, ersip_sipmsg:sipmsg()} when

@@ -10,6 +10,7 @@
 -module(psip_handler).
 
 -export([new/2,
+         args/1,
          transp_request/2,
          transaction/3,
          transaction_stop/3,
@@ -49,6 +50,10 @@ new(Module, Args) ->
     #handler{module = Module,
              args = Args
             }.
+
+-spec args(handler()) -> any().
+args(#handler{args = Args}) ->
+    Args.
 
 -spec transp_request(ersip_msg:message(), handler()) -> transp_request_ret().
 transp_request(Msg, #handler{module = Mod, args = Args}) ->
