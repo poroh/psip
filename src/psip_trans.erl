@@ -15,9 +15,11 @@
          server_process/2,
          server_response/2,
          server_cancel/1,
+         server_set_owner/3,
          client_new/2,
          client_response/2,
-         client_cancel/1]).
+         client_cancel/1
+        ]).
 
 %% gen_server
 -export([init/1,
@@ -40,7 +42,9 @@
 -type state() :: #state{}.
 
 -record(server, {handler :: psip_handler:handler(),
-                 origmsg :: ersip_sipmsg:sipmsg()
+                 origmsg :: ersip_sipmsg:sipmsg(),
+                 owner_mon :: reference() | undefined,
+                 auto_resp = 500 :: ersip_status:code()
                 }).
 -type server() :: #server{}.
 -record(client, {outreq   :: ersip_request:request(),
@@ -107,6 +111,11 @@ server_cancel(CancelSipMsg) ->
             Resp = ersip_sipmsg:reply(481, CancelSipMsg),
             {reply, Resp}
     end.
+
+-spec server_set_owner(ersip_sipmsg:status(), pid(), trans()) -> ok.
+server_set_owner(Code, OwnerPid, {trans, Pid})
+  when is_pid(OwnerPid) andalso is_integer(Code) ->
+    gen_server:cast(Pid, {set_owner, Code, OwnerPid}).
 
 -spec client_new(ersip_request:request(), client_callback()) -> trans().
 client_new(OutReq, Callback) ->
@@ -233,10 +242,31 @@ handle_cast({received, _} = Ev, #state{trans = Trans} = State) ->
         stop ->
             {stop, normal, NewState}
     end;
+handle_cast({set_owner, Code, Pid}, #state{data = #server{} = Server} = State) ->
+    psip_log:debug("trans: set owner to: ~p with code: ~p", [Pid, Code]),
+    OwnerMon = erlang:monitor(process, Pid),
+    {noreply, State#state{data = Server#server{owner_mon = OwnerMon, auto_resp = Code}}};
 handle_cast(Request, State) ->
     psip_log:error("trans: unexpected cast: ~p", [Request]),
     {noreply, State}.
 
+handle_info({'DOWN', Ref, process, Pid, _}, #state{trans = Trans, data = #server{owner_mon = Ref, origmsg = SipMsg}} = State) ->
+    case ersip_trans:has_final_response(Trans) of
+        true ->
+            {noreply, State};
+        false ->
+            #state{data = #server{origmsg = SipMsg, auto_resp = Code}} = State,
+            psip_log:debug("trans: owner is dead: ~p: auto reply with ~p", [Pid, Code]),
+            Resp = ersip_sipmsg:reply(Code, SipMsg),
+            {NewTrans, SE} = ersip_trans:event({send, Resp}, Trans),
+            NewState = State#state{trans = NewTrans},
+            case process_se_list(SE, State) of
+                continue ->
+                    {noreply, NewState};
+                stop ->
+                    {stop, normal, NewState}
+            end
+    end;
 handle_info({event, TimerEvent}, #state{trans = Trans} = State) ->
     psip_log:debug("trans: timer fired ~p", [TimerEvent]),
     {NewTrans, SE} = ersip_trans:event(TimerEvent, Trans),

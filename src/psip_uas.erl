@@ -15,7 +15,8 @@
          process_cancel/2,
          response/2,
          sipmsg/1,
-         make_reply/3
+         make_reply/3,
+         set_owner/3
         ]).
 -export_type([uas/0, id/0]).
 
@@ -106,6 +107,14 @@ make_reply(Code, ReasonPhrase, #uas{resp_tag = Tag}) ->
     ersip_reply:new(Code,
                     [{reason, ReasonPhrase},
                      {to_tag, Tag}]).
+
+%% @doc Setup owner of UAS. If owner is dead before final code than
+%% psip autmatically replys with defined code. This provides possibility
+%% of using gen_server:cast in psip user code with guarantee of transacton
+%% clearance.
+-spec set_owner(ersip_status:code(), pid(), uas()) -> ok.
+set_owner(AutoRespCode, Pid, #uas{trans = Trans}) ->
+    psip_trans:server_set_owner(AutoRespCode, Pid, Trans).
 
 %%===================================================================
 %% Internal implementation
