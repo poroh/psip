@@ -36,8 +36,10 @@
 %%===================================================================
 
 -record(state,
-        {trans   :: ersip_trans:trans(),
-         data    :: server() | client()
+        {trans      :: ersip_trans:trans(),
+         data       :: server() | client(),
+         log        :: boolean(),
+         logbranch  :: binary()
         }).
 -type state() :: #state{}.
 
@@ -81,7 +83,6 @@ server_process(Msg, Handler) ->
                         true ->
                             psip_uas:process_ack(SipMsg, Handler);
                         false ->
-                            psip_log:debug("transaction is not found: creating new one", []),
                             Args = [server, Handler, SipMsg],
                             case psip_trans_sup:start_child([Args]) of
                                 {ok, _} -> ok;
@@ -112,7 +113,7 @@ server_cancel(CancelSipMsg) ->
             {reply, Resp}
     end.
 
--spec server_set_owner(ersip_sipmsg:status(), pid(), trans()) -> ok.
+-spec server_set_owner(ersip_status:code(), pid(), trans()) -> ok.
 server_set_owner(Code, OwnerPid, {trans, Pid})
   when is_pid(OwnerPid) andalso is_integer(Code) ->
     gen_server:cast(Pid, {set_owner, Code, OwnerPid}).
@@ -181,23 +182,40 @@ init([server, Handler, SipMsg]) ->
     {Trans, TransSE} = ersip_trans:new_server(SipMsg, #{}),
     TransId = ersip_trans:id(Trans),
     gproc:add_local_name(TransId),
-    psip_log:debug("trans: starting server transaction with id: ~p", [TransId]),
     gen_server:cast(self(), {process_se, TransSE}),
+
+    LogBranch = case ersip_hdr_via:branch(ersip_sipmsg:topmost_via(SipMsg)) of
+                    {ok, BVal} -> ersip_branch:assemble(BVal);
+                    undefined -> <<"not defined">>
+                end,
     State = #state{trans = Trans,
                    data  = #server{handler = Handler,
-                                   origmsg = SipMsg}
+                                   origmsg = SipMsg},
+                   log     = psip_config:log_transactions(),
+                   logbranch = LogBranch
                   },
+    Method = ersip_sipmsg:method_bin(SipMsg),
+    RURI   = ersip_uri:assemble(ersip_sipmsg:ruri(SipMsg)),
+    CallId = ersip_hdr_callid:assemble(ersip_sipmsg:callid(SipMsg)),
+    psip_log:info("trans: server: ~s ~s; call-id: ~s; branch: ~s", [Method, RURI, CallId, LogBranch]),
     {ok, State};
 init([client, OutReq, Callback]) ->
     {Trans, TransSE} = ersip_trans:new_client(OutReq, #{}),
     TransId = ersip_trans:id(Trans),
     gproc:add_local_name(TransId),
-    psip_log:debug("trans: starting client transaction with id: ~p", [TransId]),
     gen_server:cast(self(), {process_se, TransSE}),
+    Branch = ersip_branch:assemble(ersip_request:branch(OutReq)),
     State = #state{trans   = Trans,
                    data    = #client{outreq = OutReq,
-                                     callback = Callback}
+                                     callback = Callback},
+                   log     = psip_config:log_transactions(),
+                   logbranch = Branch
                   },
+    SipMsg = ersip_request:sipmsg(OutReq),
+    Method = ersip_sipmsg:method_bin(SipMsg),
+    RURI   = ersip_uri:assemble(ersip_sipmsg:ruri(SipMsg)),
+    CallId = ersip_hdr_callid:assemble(ersip_sipmsg:callid(SipMsg)),
+    psip_log:info("trans: client: ~s ~s; call-id: ~s; branch: ~s", [Method, RURI, CallId, Branch]),
     {ok, State}.
 
 
@@ -213,7 +231,7 @@ handle_cast({process_se, SE}, #state{} = State) ->
             {stop, normal, State}
     end;
 handle_cast({send, _} = Ev, #state{trans = Trans} = State) ->
-    psip_log:debug("trans: sending message", []),
+    log_trans(State, "trans: sending message", []),
     {NewTrans, SE} = ersip_trans:event(Ev, Trans),
     NewState = State#state{trans = NewTrans},
     case process_se_list(SE, State) of
@@ -223,17 +241,24 @@ handle_cast({send, _} = Ev, #state{trans = Trans} = State) ->
             {stop, normal, NewState}
     end;
 handle_cast(cancel, #state{data = #server{handler = Handler}} = State) ->
-    psip_log:debug("trans: canceling server transaction", []),
+    log_trans(State, "trans: canceling server transaction", []),
     psip_uas:process_cancel(make_trans(), Handler),
     {noreply, State};
 handle_cast(cancel, #state{data = #client{} = Data} = State) ->
-    psip_log:debug("trans: canceling client transaction", []),
+    log_trans(State, "trans: canceling client transaction", []),
     #client{outreq = OutReq} = Data,
     CancelReq = ersip_request_cancel:generate(OutReq),
     _ = client_new(CancelReq, fun(_) -> ok end),
     {noreply, State};
-handle_cast({received, _} = Ev, #state{trans = Trans} = State) ->
-    psip_log:debug("trans: received message", []),
+handle_cast({received, SipMsg} = Ev, #state{trans = Trans} = State) ->
+    case ersip_sipmsg:type(SipMsg) of
+        request -> ok;
+        response ->
+            CallId = ersip_hdr_callid:assemble(ersip_sipmsg:callid(SipMsg)),
+            Branch = State#state.logbranch,
+            Method = ersip_sipmsg:method_bin(SipMsg),
+            psip_log:info("trans: response on ~s: ~b ~s; call-id: ~s; branch: ~s", [Method, ersip_sipmsg:status(SipMsg), ersip_sipmsg:reason(SipMsg), CallId, Branch])
+    end,
     {NewTrans, SE} = ersip_trans:event(Ev, Trans),
     NewState = State#state{trans = NewTrans},
     case process_se_list(SE, State) of
@@ -243,7 +268,7 @@ handle_cast({received, _} = Ev, #state{trans = Trans} = State) ->
             {stop, normal, NewState}
     end;
 handle_cast({set_owner, Code, Pid}, #state{data = #server{} = Server} = State) ->
-    psip_log:debug("trans: set owner to: ~p with code: ~p", [Pid, Code]),
+    log_trans(State, "trans: set owner to: ~p with code: ~p", [Pid, Code]),
     OwnerMon = erlang:monitor(process, Pid),
     {noreply, State#state{data = Server#server{owner_mon = OwnerMon, auto_resp = Code}}};
 handle_cast(Request, State) ->
@@ -256,7 +281,7 @@ handle_info({'DOWN', Ref, process, Pid, _}, #state{trans = Trans, data = #server
             {noreply, State};
         false ->
             #state{data = #server{origmsg = SipMsg, auto_resp = Code}} = State,
-            psip_log:debug("trans: owner is dead: ~p: auto reply with ~p", [Pid, Code]),
+            log_trans(State, "trans: owner is dead: ~p: auto reply with ~p", [Pid, Code]),
             Resp = ersip_sipmsg:reply(Code, SipMsg),
             {NewTrans, SE} = ersip_trans:event({send, Resp}, Trans),
             NewState = State#state{trans = NewTrans},
@@ -268,7 +293,7 @@ handle_info({'DOWN', Ref, process, Pid, _}, #state{trans = Trans, data = #server
             end
     end;
 handle_info({event, TimerEvent}, #state{trans = Trans} = State) ->
-    psip_log:debug("trans: timer fired ~p", [TimerEvent]),
+    log_trans(State, "trans: timer fired ~p", [TimerEvent]),
     {NewTrans, SE} = ersip_trans:event(TimerEvent, Trans),
     NewState = State#state{trans = NewTrans},
     case process_se_list(SE, State) of
@@ -281,10 +306,10 @@ handle_info(Msg, State) ->
     psip_log:error("trans: unexpected info: ~p", [Msg]),
     {noreply, State}.
 
-terminate(Reason, #state{}) ->
+terminate(Reason, #state{} = State) ->
     case Reason of
         normal ->
-            psip_log:debug("trans: finished", []);
+            log_trans(State, "trans: finished", []);
         _ ->
             psip_log:error("trans: finished with error: ~p", [Reason])
     end,
@@ -328,30 +353,37 @@ process_se({tu_result, SipMsg}, #state{data = #server{handler = Handler}}) ->
 process_se({tu_result, SipMsg}, #state{data = #client{callback = Callback}}) ->
     Callback({message, SipMsg}),
     continue;
-process_se({set_timer, {Timeout, TimerEvent}}, #state{}) ->
-    psip_log:debug("trans: set timer on ~p ms: ~p", [Timeout, TimerEvent]),
+process_se({set_timer, {Timeout, TimerEvent}}, #state{} = State) ->
+    log_trans(State, "trans: set timer on ~p ms: ~p", [Timeout, TimerEvent]),
     erlang:send_after(Timeout, self(), {event, TimerEvent}),
     continue;
-process_se({clear_trans, normal}, #state{data = #server{}}) ->
-    psip_log:debug("trans: transaction cleared: normal", []),
+process_se({clear_trans, normal}, #state{data = #server{}} = State) ->
+    log_trans(State, "trans: transaction cleared: normal", []),
     stop;
-process_se({clear_trans, Reason}, #state{data = #server{handler = Handler}}) ->
-    psip_log:debug("trans: transaction cleared: ~p", [Reason]),
+process_se({clear_trans, Reason}, #state{data = #server{handler = Handler}} = State) ->
+    log_trans(State, "trans: transaction cleared: ~p", [Reason]),
     psip_handler:transaction_stop({trans, self()}, Reason, Handler),
     stop;
-process_se({clear_trans, Reason}, #state{data = #client{callback = Callback}}) ->
-    psip_log:debug("trans: client transaction cleared: ~p", [Reason]),
+process_se({clear_trans, Reason}, #state{data = #client{callback = Callback}} = State) ->
+    log_trans(State, "trans: client transaction cleared: ~p", [Reason]),
     Callback({stop, Reason}),
     stop;
-process_se({send_request, OutReq}, #state{}) ->
-    psip_log:debug("trans: sending request", []),
+process_se({send_request, OutReq}, #state{} = State) ->
+    log_trans(State, "trans: sending request", []),
     psip_tport:send_request(OutReq),
     continue;
-process_se({send_response, Response}, #state{data = #server{origmsg = ReqSipMsg}}) ->
-    psip_log:debug("trans: sending response", []),
+process_se({send_response, Response}, #state{data = #server{origmsg = ReqSipMsg}} = State) ->
+    log_trans(State, "trans: sending response", []),
     psip_source:send_response(Response, ReqSipMsg),
     continue.
 
 -spec make_trans() -> trans().
 make_trans() ->
     {trans, self()}.
+
+-spec log_trans(state(), string(), list()) -> ok.
+log_trans(#state{log = true}, Format, Args) ->
+    psip_log:debug(Format, Args);
+log_trans(_, _, _) ->
+    ok.
+

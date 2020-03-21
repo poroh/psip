@@ -13,7 +13,8 @@
          allowed_methods/0,
          set_allowed_methods/1,
          uas_options/0,
-         set_uas_options/1
+         set_uas_options/1,
+         log_transactions/0
         ]).
 
 %%===================================================================
@@ -43,6 +44,10 @@ uas_options() ->
 -spec set_uas_options(ersip_uas:options()) -> ok.
 set_uas_options(UASOptions) ->
     application:set_env(psip, uas_options, UASOptions).
+
+-spec log_transactions() -> boolean().
+log_transactions() ->
+    application:get_env(psip, log_transactions, false).
 
 %%===================================================================
 %% Internal implementation

@@ -36,7 +36,8 @@
 -record(state, {id :: ersip_dialog:id(),
                 dialog :: ersip_dialog:dialog(),
                 local_contact :: [ersip_hdr_contact:contact()],
-                early_branch  :: ersip_branch:branch() | undefined
+                early_branch  :: ersip_branch:branch() | undefined,
+                log_id :: string()
                }).
 -type state() :: #state{}.
 
@@ -70,7 +71,7 @@ uas_request(SipMsg) ->
         {ok, DialogId} ->
             case find_dialog(DialogId) of
                 not_found ->
-                    psip_log:warning("dialog: cannot find dialog ~p", [DialogId]),
+                    psip_log:warning("dialog ~s: cannot find dialog", [uas_log_id(SipMsg)]),
                     Resp = ersip_sipmsg:reply(481, SipMsg),
                     {reply, Resp};
                 {ok, DialogPid} ->
@@ -116,7 +117,8 @@ uac_result(OutReq, TransResult) ->
         {ok, DialogId} ->
             case find_dialog(DialogId) of
                 not_found ->
-                    psip_log:warning("dialog ~p is not found", [DialogId]),
+                    SipMsg = ersip_request:sipmsg(OutReq),
+                    psip_log:warning("dialog: ~s is not found", [uac_log_id(SipMsg)]),
                     ok;
                 {ok, DialogPid} ->
                     uac_trans_result(DialogPid, TransResult)
@@ -160,9 +162,10 @@ init({uas, RespSipMsg, ReqSipMsg}) ->
     gproc:add_local_name({?MODULE, DialogId}),
     State = #state{id     = DialogId,
                    dialog = ersip_dialog:uas_create(ReqSipMsg, RespSipMsg),
-                   local_contact = ersip_sipmsg:get(contact, RespSipMsg)
+                   local_contact = ersip_sipmsg:get(contact, RespSipMsg),
+                   log_id = uas_log_id(RespSipMsg)
                   },
-    psip_log:debug("dialog: started by UAS with id: ~p", [DialogId]),
+    log_info(State, "started by UAS", []),
     {ok, State};
 init({uac, OutReq, RespSipMsg}) ->
     {ok, DialogId} = ersip_sipmsg:dialog_id(uac, RespSipMsg),
@@ -183,12 +186,13 @@ init({uac, OutReq, RespSipMsg}) ->
             State = #state{id           = DialogId,
                            dialog       = Dialog,
                            local_contact = ersip_sipmsg:get(contact, OutSipMsg),
-                           early_branch = EarlyBranch
+                           early_branch = EarlyBranch,
+                           log_id       = uac_log_id(RespSipMsg)
                           },
-            psip_log:debug("dialog: started by UAC with id: ~p", [DialogId]),
+            log_info(State, "started by UAC", []),
             {ok, State};
         {error, _} = Error ->
-            psip_log:warning("dialog: cannot create dialog, error: ~p", [Error]),
+            psip_log:warning("dialog ~s: cannot create dialog, error: ~p", [uac_log_id(RespSipMsg), Error]),
             {stop, Error}
     end.
 
@@ -206,6 +210,7 @@ handle_call({uas_pass_response, RespSipMsg, ReqSipMsg}, _From, #state{dialog = D
     Resp1 = maybe_set_contact(Resp, State),
     case ersip_sipmsg:method(Resp1) == ersip_method:bye() of
         true ->
+            log_info(State, "finished after response on BYE ", []),
             {stop, normal, Resp1, NewState};
         false ->
             {reply, Resp1, NewState}
@@ -215,17 +220,18 @@ handle_call({uac_request, SipMsg}, _From, #state{dialog = Dialog} = State) ->
     NewState  = State#state{dialog = NewDialog},
     {reply, {ok, DlgSipMsg1}, NewState};
 handle_call(Request, _From, State) ->
-    psip_log:error("dialog: unexpected call: ~p", [Request]),
+    log_error(State, "unexpected call: ~p", [Request]),
     {reply, {error, {unexpected_call, Request}}, State}.
 
 handle_cast({uac_early_trans_result, {stop, timeout}}, #state{} = State) ->
-    psip_log:warning("dialog: stopped because timeout", []),
+    log_warning(State, "stopped because timeout", []),
     {stop, normal, State};
 handle_cast({uac_early_trans_result, {stop, _}}, #state{} = State) ->
     {noreply, State};
 handle_cast({uac_early_trans_result, {message, RespSipMsg}}, #state{dialog = Dialog} = State) ->
     case ersip_dialog:uac_update(RespSipMsg, Dialog) of
         terminate_dialog ->
+            log_info(State, "early dialog finished", []),
             {stop, normal, State};
         {ok, NewDialog} ->
             NewState =
@@ -238,39 +244,41 @@ handle_cast({uac_early_trans_result, {message, RespSipMsg}}, #state{dialog = Dia
             {noreply, NewState}
     end;
 handle_cast({uac_trans_result, {stop, timeout}}, #state{} = State) ->
-    psip_log:warning("dialog: stopped because timeout", []),
+    log_warning(State, "stopped because timeout", []),
     {stop, normal, State};
 handle_cast({uac_trans_result, {stop, _}}, #state{} = State) ->
     {noreply, State};
 handle_cast({uac_trans_result, {message, RespSipMsg}}, #state{dialog = Dialog} = State) ->
     ReqType = request_type(RespSipMsg),
-    psip_log:debug("dialog: transaction result: ~p", [ReqType]),
+    log_debug(State, "transaction result: ~s: ~b ~s", [ersip_sipmsg:method_bin(RespSipMsg), ersip_sipmsg:status(RespSipMsg), ersip_sipmsg:reason(RespSipMsg)]),
     case ersip_dialog:uac_trans_result(RespSipMsg, ReqType, Dialog) of
         terminate_dialog ->
+            log_info(State, "dialog by response", []),
             {stop, normal, State};
         {ok, Dialog1} ->
             NewState = State#state{dialog = Dialog1},
             case ersip_sipmsg:method(RespSipMsg) == ersip_method:bye() of
                 true ->
+                    log_info(State, "dialog on BYE request", []),
                     {stop, normal, NewState};
                 false ->
                     {noreply, NewState}
             end
     end;
 handle_cast(Request, State) ->
-    psip_log:error("dialog: unexpected cast: ~p", [Request]),
+    log_error(State, "unexpected cast: ~p", [Request]),
     {noreply, State}.
 
 handle_info(Msg, State) ->
-    psip_log:error("dialog: unexpected info: ~p", [Msg]),
+    log_error(State, "unexpected info: ~p", [Msg]),
     {noreply, State}.
 
-terminate(Reason, #state{id = DialogId}) ->
+terminate(Reason, #state{} = State) ->
     case Reason of
         normal ->
-            psip_log:debug("dialog: finished, id: ~p", [DialogId]);
+            log_debug(State, "finished", []);
         _ ->
-            psip_log:error("dialog: finished with error: ~p, id: ~p", [Reason, DialogId])
+            log_error(State, "finished with error: ~p", [Reason])
     end,
     ok.
 
@@ -322,7 +330,7 @@ uas_start_dialog(RespSipMsg, ReqSipMsg) ->
         {ok, DialogPid} ->
             uas_pass_response(DialogPid, RespSipMsg, ReqSipMsg);
         {error, _} = Error ->
-            psip_log:error("dialog: failed to start ~p", [Error]),
+            psip_log:error("dialog ~s: failed to start ~p", [uas_log_id(RespSipMsg), Error]),
             RespSipMsg
     end.
 
@@ -332,7 +340,7 @@ uac_start_dialog(OutReq, RespSipMsg) ->
     case psip_dialog_sup:start_child([InitArgs]) of
         {ok, _} -> ok;
         {error, _} = Error ->
-            psip_log:error("dialog: failed to start dialog ~p", [Error]),
+            psip_log:error("dialog ~s: failed to start dialog ~p", [uac_log_id(RespSipMsg), Error]),
             ok
     end.
 
@@ -399,7 +407,6 @@ uac_ensure_dialog(OutReq, RespSipMsg) ->
                 not_found ->
                     case ersip_sipmsg:status(RespSipMsg) of
                         Status when Status > 100, Status =< 299 ->
-                            psip_log:debug("dialog ~p not found, create new one", [DialogId]),
                             uac_start_dialog(OutReq, RespSipMsg);
                         _ -> ok
                     end;
@@ -434,3 +441,45 @@ need_unregister_branch_name(_Dialog, #state{early_branch = undefined}) ->
     false;
 need_unregister_branch_name(Dialog, #state{}) ->
     not ersip_dialog:is_early(Dialog).
+
+
+-spec log_tag(ersip_hdr_fromto:fromto()) -> binary().
+log_tag(FromOrTo) ->
+    case ersip_hdr_fromto:tag(FromOrTo) of
+        undefined ->
+            <<"<undefined>">>;
+        {tag, T} ->
+            T
+    end.
+
+-spec uac_log_id(ersip_sipmsg:sipmsg()) -> string().
+uac_log_id(SipMsg) ->
+    CallId = ersip_hdr_callid:assemble(ersip_sipmsg:callid(SipMsg)),
+    RemoteTag = log_tag(ersip_sipmsg:to(SipMsg)),
+    LocalTag  = log_tag(ersip_sipmsg:from(SipMsg)),
+    io_lib:format("~s ~s ~s", [CallId, LocalTag, RemoteTag]).
+
+-spec uas_log_id(ersip_sipmsg:sipmsg()) -> string().
+uas_log_id(SipMsg) ->
+    CallId = ersip_hdr_callid:assemble(ersip_sipmsg:callid(SipMsg)),
+    RemoteTag = log_tag(ersip_sipmsg:from(SipMsg)),
+    LocalTag  = log_tag(ersip_sipmsg:to(SipMsg)),
+    io_lib:format("~s ~s ~s", [CallId, LocalTag, RemoteTag]).
+
+-spec log_debug(state(), string(), list()) -> ok.
+log_debug(#state{log_id = LogId}, Format, Args) ->
+    psip_log:debug("dialog: ~s: " ++ Format, [LogId | Args]).
+
+-spec log_info(state(), string(), list()) -> ok.
+log_info(#state{log_id = LogId}, Format, Args) ->
+    psip_log:info("dialog: ~s: " ++ Format, [LogId | Args]).
+
+-spec log_warning(state(), string(), list()) -> ok.
+log_warning(#state{log_id = LogId}, Format, Args) ->
+    psip_log:warning("dialog: ~s: " ++ Format, [LogId | Args]).
+
+-spec log_error(state(), string(), list()) -> ok.
+log_error(#state{log_id = LogId}, Format, Args) ->
+    psip_log:error("dialog: ~s: " ++ Format, [LogId | Args]).
+
+
