@@ -61,7 +61,9 @@ cancel({uac_id, Trans}) ->
 
 -spec make_transaction_handler(ersip_request:request(), callback()) -> callback().
 make_transaction_handler(OutReq, CB) ->
-    fun(TransResult) ->
+    fun({stop, normal}) ->
+            ok;
+       (TransResult) ->
             psip_dialog:uac_result(OutReq, TransResult),
             CB(TransResult)
     end.

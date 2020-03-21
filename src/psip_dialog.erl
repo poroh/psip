@@ -118,7 +118,7 @@ uac_result(OutReq, TransResult) ->
             case find_dialog(DialogId) of
                 not_found ->
                     SipMsg = ersip_request:sipmsg(OutReq),
-                    psip_log:warning("dialog: ~s is not found", [uac_log_id(SipMsg)]),
+                    psip_log:warning("dialog: ~s is not found for request ~s", [uac_log_id(SipMsg), ersip_sipmsg:method_bin(SipMsg)]),
                     ok;
                 {ok, DialogPid} ->
                     uac_trans_result(DialogPid, TransResult)
@@ -383,10 +383,13 @@ uac_no_dialog_result(OutReq, {stop, timeout} = TransResult) ->
 uac_no_dialog_result(_, {stop, _}) ->
     ok;
 uac_no_dialog_result(OutReq, {message, RespSipMsg}) ->
-    ReqSipMsg = ersip_request:sipmsg(OutReq),
-    case need_create_dialog(ReqSipMsg) of
-        true  -> uac_ensure_dialog(OutReq, RespSipMsg);
-        false -> ok
+    case ersip_sipmsg:status(RespSipMsg) of
+        Status when Status > 100, Status =< 299 ->
+            case need_create_dialog(RespSipMsg) of
+                true  -> uac_ensure_dialog(OutReq, RespSipMsg);
+                false -> ok
+            end;
+        _ -> ok
     end.
 
 -spec uac_ensure_dialog(ersip_request:request(), ersip_sipmsg:sipmsg()) -> ok.
