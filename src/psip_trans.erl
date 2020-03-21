@@ -257,7 +257,7 @@ handle_cast({received, SipMsg} = Ev, #state{trans = Trans} = State) ->
             CallId = ersip_hdr_callid:assemble(ersip_sipmsg:callid(SipMsg)),
             Branch = State#state.logbranch,
             Method = ersip_sipmsg:method_bin(SipMsg),
-            psip_log:info("trans: response on ~s: ~b ~s; call-id: ~s; branch: ~s", [Method, ersip_sipmsg:status(SipMsg), ersip_sipmsg:reason(SipMsg), CallId, Branch])
+            psip_log:info("trans: client: response on ~s: ~b ~s; call-id: ~s; branch: ~s", [Method, ersip_sipmsg:status(SipMsg), ersip_sipmsg:reason(SipMsg), CallId, Branch])
     end,
     {NewTrans, SE} = ersip_trans:event(Ev, Trans),
     NewState = State#state{trans = NewTrans},
@@ -374,6 +374,14 @@ process_se({send_request, OutReq}, #state{} = State) ->
     continue;
 process_se({send_response, Response}, #state{data = #server{origmsg = ReqSipMsg}} = State) ->
     log_trans(State, "trans: sending response", []),
+    case ersip_status:response_type(ersip_sipmsg:status(Response)) of
+        provisional -> ok;
+        final ->
+            Method = ersip_sipmsg:method_bin(Response),
+            CallId = ersip_hdr_callid:assemble(ersip_sipmsg:callid(Response)),
+            Branch = State#state.logbranch,
+            psip_log:info("trans: server: response on ~s: ~b ~s; call-id: ~s; branch: ~s", [Method, ersip_sipmsg:status(Response), ersip_sipmsg:reason(Response), CallId, Branch])
+    end,
     psip_source:send_response(Response, ReqSipMsg),
     continue.
 
