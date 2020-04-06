@@ -343,11 +343,19 @@ process_se_list([SE | Rest], #state{} = State) ->
     end.
 
 -spec process_se(ersip_trans_se:effect(), state()) -> continue | stop.
-process_se({tu_result, SipMsg}, #state{data = #server{handler = Handler}}) ->
+process_se({tu_result, SipMsg}, #state{data = #server{handler = Handler}} = State) ->
     case psip_handler:transaction(make_trans(), SipMsg, Handler) of
         ok -> ok;
         process_uas ->
-            psip_uas:process(make_trans(), SipMsg, Handler)
+            case ersip_sipmsg:method(SipMsg) == ersip_method:ack() of
+                true  ->
+                    CallId = ersip_hdr_callid:assemble(ersip_sipmsg:callid(SipMsg)),
+                    Branch = State#state.logbranch,
+                    psip_log:warning("ACK that matches transaction received: call-id: ~s; branch: ~s", [CallId, Branch]),
+                    psip_uas:process_ack(SipMsg, Handler);
+                false ->
+                    psip_uas:process(make_trans(), SipMsg, Handler)
+            end
     end,
     continue;
 process_se({tu_result, SipMsg}, #state{data = #client{callback = Callback}}) ->
