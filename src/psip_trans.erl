@@ -16,7 +16,7 @@
          server_response/2,
          server_cancel/1,
          server_set_owner/3,
-         client_new/2,
+         client_new/3,
          client_response/2,
          client_cancel/1
         ]).
@@ -118,9 +118,9 @@ server_set_owner(Code, OwnerPid, {trans, Pid})
   when is_pid(OwnerPid) andalso is_integer(Code) ->
     gen_server:cast(Pid, {set_owner, Code, OwnerPid}).
 
--spec client_new(ersip_request:request(), client_callback()) -> trans().
-client_new(OutReq, Callback) ->
-    Args = [client, OutReq, Callback],
+-spec client_new(ersip_request:request(), psip_uac:options(), client_callback()) -> trans().
+client_new(OutReq, Options, Callback) ->
+    Args = [client, OutReq, Options, Callback],
     case psip_trans_sup:start_child([Args]) of
         {ok, Pid} ->
             {trans, Pid};
@@ -199,8 +199,9 @@ init([server, Handler, SipMsg]) ->
     CallId = ersip_hdr_callid:assemble(ersip_sipmsg:callid(SipMsg)),
     psip_log:info("trans: server: ~s ~s; call-id: ~s; branch: ~s", [Method, RURI, CallId, LogBranch]),
     {ok, State};
-init([client, OutReq, Callback]) ->
-    {Trans, TransSE} = ersip_trans:new_client(OutReq, #{}),
+init([client, OutReq, Options, Callback]) ->
+    SipOptions = maps:get(sip, Options, #{}),
+    {Trans, TransSE} = ersip_trans:new_client(OutReq, SipOptions),
     TransId = ersip_trans:id(Trans),
     gproc:add_local_name(TransId),
     gen_server:cast(self(), {process_se, TransSE}),
@@ -248,7 +249,7 @@ handle_cast(cancel, #state{data = #client{} = Data} = State) ->
     log_trans(State, "trans: canceling client transaction", []),
     #client{outreq = OutReq} = Data,
     CancelReq = ersip_request_cancel:generate(OutReq),
-    _ = client_new(CancelReq, fun(_) -> ok end),
+    _ = client_new(CancelReq, #{}, fun(_) -> ok end),
     {noreply, State};
 handle_cast({received, SipMsg} = Ev, #state{trans = Trans} = State) ->
     case ersip_sipmsg:type(SipMsg) of

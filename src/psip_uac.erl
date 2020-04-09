@@ -11,9 +11,12 @@
 
 -export([request/3,
          request/2,
+         request_with_opts/3,
          ack_request/1,
          cancel/1
         ]).
+
+-export_type([options/0]).
 
 %%===================================================================
 %% Types
@@ -22,6 +25,7 @@
 -type callback() :: fun((client_trans_result()) -> any()).
 -type client_trans_result() :: psip_trans:client_result().
 -type id() :: {uac_id, psip_trans:trans()}.
+-type options() :: #{sip => ersip:sip_options()}.
 
 -export_type([id/0, callback/0]).
 
@@ -34,7 +38,7 @@ request(SipMsg, Nexthop, UACCallBack) ->
     Branch = ersip_branch:make_random(6),
     OutReq = ersip_request:new(SipMsg, Branch, Nexthop),
     CallbackFun = make_transaction_handler(OutReq, UACCallBack),
-    Trans = psip_trans:client_new(OutReq, CallbackFun),
+    Trans = psip_trans:client_new(OutReq, #{}, CallbackFun),
     {uac_id, Trans}.
 
 -spec request(ersip_sipmsg:sipmsg(), callback()) -> id().
@@ -42,7 +46,15 @@ request(SipMsg, UACCallBack) ->
     Branch = ersip_branch:make_random(6),
     OutReq = ersip_request:new(SipMsg, Branch),
     CallbackFun = make_transaction_handler(OutReq, UACCallBack),
-    Trans = psip_trans:client_new(OutReq, CallbackFun),
+    Trans = psip_trans:client_new(OutReq, #{}, CallbackFun),
+    {uac_id, Trans}.
+
+-spec request_with_opts(ersip_sipmsg:sipmsg(), options(), callback()) -> id().
+request_with_opts(SipMsg, UACOptions, UACCallBack) ->
+    Branch = ersip_branch:make_random(6),
+    OutReq = ersip_request:new(SipMsg, Branch),
+    CallbackFun = make_transaction_handler(OutReq, UACCallBack),
+    Trans = psip_trans:client_new(OutReq, UACOptions, CallbackFun),
     {uac_id, Trans}.
 
 -spec ack_request(ersip_sipmsg:sipmsg()) -> ok.
