@@ -12,7 +12,8 @@
 -export([start_link/1,
          join_dialogs/2,
          process/1,
-         process_ack/1
+         process_ack/1,
+         count/0
         ]).
 
 %% gen_server
@@ -74,6 +75,10 @@ process_ack(SipMsg) ->
                     not_found
             end
     end.
+
+-spec count() -> non_neg_integer().
+count() ->
+    psip_b2bua_sup:num_active().
 
 %%===================================================================
 %% gen_server callbacks

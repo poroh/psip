@@ -16,7 +16,8 @@
          uas_request/1,
          uas_response/2,
          uac_request/2,
-         uac_result/2
+         uac_result/2,
+         count/0
         ]).
 
 %% gen_server
@@ -125,6 +126,9 @@ uac_result(OutReq, TransResult) ->
             end
     end.
 
+-spec count() -> non_neg_integer().
+count() ->
+    psip_dialog_sup:num_active().
 
 %%===================================================================
 %% gen_server callbacks

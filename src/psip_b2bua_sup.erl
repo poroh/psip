@@ -13,7 +13,8 @@
 
 %% API
 -export([start_link/0,
-         start_child/1
+         start_child/1,
+         num_active/0
         ]).
 
 %% Supervisor callbacks
@@ -46,6 +47,10 @@ start_link() ->
 -spec start_child(term()) -> startchild_ret().
 start_child(Args) ->
     supervisor:start_child(?SERVER, Args).
+
+-spec num_active() -> non_neg_integer().
+num_active() ->
+    proplists:get_value(active, supervisor:count_children(?SERVER)).
 
 %%====================================================================
 %% Supervisor callbacks

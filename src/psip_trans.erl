@@ -18,7 +18,8 @@
          server_set_owner/3,
          client_new/3,
          client_response/2,
-         client_cancel/1
+         client_cancel/1,
+         count/0
         ]).
 
 %% gen_server
@@ -147,6 +148,10 @@ client_response(Via, Msg) ->
 -spec client_cancel(trans()) -> ok.
 client_cancel({trans, Pid}) ->
     gen_server:cast(Pid, cancel).
+
+-spec count() -> non_neg_integer().
+count() ->
+    psip_trans_sup:num_active().
 
 %%===================================================================
 %% gen_server callbacks
