@@ -14,6 +14,7 @@
          process_ack/2,
          process_cancel/2,
          response/2,
+         response_retransmit/2,
          sipmsg/1,
          make_reply/3,
          set_owner/3
@@ -96,6 +97,12 @@ process_cancel(Trans, Handler) ->
 -spec response(ersip_sipmsg:sipmsg(), uas()) -> ok.
 response(RespSipMsg0, #uas{trans = Trans, req = ReqSipMsg}) ->
     RespSipMsg = psip_dialog:uas_response(RespSipMsg0, ReqSipMsg),
+    psip_trans:server_response(RespSipMsg, Trans).
+
+%% @doc Retransmit of 2xx responses on INVITE request. This response
+%% does not create new dialog.
+-spec response_retransmit(ersip_sipmsg:sipmsg(), uas()) -> ok.
+response_retransmit(RespSipMsg, #uas{trans = Trans}) ->
     psip_trans:server_response(RespSipMsg, Trans).
 
 -spec sipmsg(uas()) -> ersip_sipmsg:sipmsg().
