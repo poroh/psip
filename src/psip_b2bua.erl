@@ -114,36 +114,36 @@ count() ->
 init({DialogId1, DialogId2}) ->
     gproc:add_local_name({b2bua, DialogId1}),
     gproc:add_local_name({b2bua, DialogId2}),
-    psip_log:debug("b2bua: started by with ids: ~p ~p", [DialogId1, DialogId2]),
+    psip_log:debug("b2bua: started by with ids: ~0p ~0p", [DialogId1, DialogId2]),
     State = #state{ids = {DialogId1, DialogId2}},
     {ok, State}.
 
 handle_call(Request, _From, State) ->
-    psip_log:error("b2bua: unexpected call: ~p", [Request]),
+    psip_log:error("b2bua: unexpected call: ~0p", [Request]),
     {reply, {error, {unexpected_call, Request}}, State}.
 
 handle_cast({pass_ack, SrcDialogId, AckSipMsg0}, #state{} = State) ->
     DstDialogId = another_dialog_id(SrcDialogId, State#state.ids),
-    psip_log:debug("b2bua: passing ACK to: ~p", [DstDialogId]),
+    psip_log:debug("b2bua: passing ACK to: ~0p", [DstDialogId]),
     AckSipMsg = pass_request(AckSipMsg0),
     case psip_dialog:uac_request(DstDialogId, AckSipMsg) of
         {ok, DstAckSipMsg} ->
             psip_uac:ack_request(DstAckSipMsg);
         {error, _} = Error ->
-            psip_log:warning("b2bua: cannot pass message: ~p", [Error])
+            psip_log:warning("b2bua: cannot pass message: ~0p", [Error])
     end,
     {noreply, State};
 handle_cast({pass, SrcDialogId, UAS}, #state{} = State) ->
     DstDialogId = another_dialog_id(SrcDialogId, State#state.ids),
     SipMsg0 = psip_uas:sipmsg(UAS),
     SipMsg = pass_request(SipMsg0),
-    psip_log:debug("b2bua: passing ~s to: ~p", [ersip_sipmsg:method_bin(SipMsg), DstDialogId]),
+    psip_log:debug("b2bua: passing ~s to: ~0p", [ersip_sipmsg:method_bin(SipMsg), DstDialogId]),
     case psip_dialog:uac_request(DstDialogId, SipMsg) of
         {ok, DstSipMsg} ->
             _ = psip_uac:request(DstSipMsg, make_req_callback(UAS)),
             ok;
         {error, _} = Error ->
-            psip_log:warning("b2bua: cannot pass message: ~p", [Error])
+            psip_log:warning("b2bua: cannot pass message: ~0p", [Error])
     end,
     case ersip_sipmsg:method(SipMsg) == ersip_method:bye() of
         true ->
@@ -152,11 +152,11 @@ handle_cast({pass, SrcDialogId, UAS}, #state{} = State) ->
             {noreply, State}
     end;
 handle_cast(Request, State) ->
-    psip_log:error("b2bua: unexpected cast: ~p", [Request]),
+    psip_log:error("b2bua: unexpected cast: ~0p", [Request]),
     {noreply, State}.
 
 handle_info(Msg, State) ->
-    psip_log:error("b2bua: unexpected info: ~p", [Msg]),
+    psip_log:error("b2bua: unexpected info: ~0p", [Msg]),
     {noreply, State}.
 
 terminate(Reason, #state{}) ->
@@ -164,7 +164,7 @@ terminate(Reason, #state{}) ->
         normal ->
             psip_log:debug("b2bua: finished", []);
         _ ->
-            psip_log:error("b2bua: finished with error: ~p", [Reason])
+            psip_log:error("b2bua: finished with error: ~0p", [Reason])
     end,
     ok.
 

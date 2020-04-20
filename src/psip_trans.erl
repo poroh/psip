@@ -88,12 +88,12 @@ server_process(Msg, Handler) ->
                             case psip_trans_sup:start_child([Args]) of
                                 {ok, _} -> ok;
                                 {error, _} = Error ->
-                                    psip_log:error("failed to create transaction: ~p", [Error])
+                                    psip_log:error("failed to create transaction: ~0p", [Error])
                             end
                     end
             end;
         {error, _} = Error ->
-            psip_log:warning("failed to parse SIP message: ~p~n~s", [Error, ersip_msg:serialize(Msg)])
+            psip_log:warning("failed to parse SIP message: ~0p~n~s", [Error, ersip_msg:serialize(Msg)])
     end.
 
 -spec server_response(ersip_sipmsg:sipmsg(), trans()) -> ok.
@@ -109,7 +109,7 @@ server_cancel(CancelSipMsg) ->
             Resp = ersip_sipmsg:reply(200, CancelSipMsg),
             {reply, Resp};
         _ ->
-            psip_log:info("cannot find transaction to CANCEL: ~p", [TransId]),
+            psip_log:info("cannot find transaction to CANCEL: ~0p", [TransId]),
             Resp = ersip_sipmsg:reply(481, CancelSipMsg),
             {reply, Resp}
     end.
@@ -126,7 +126,7 @@ client_new(OutReq, Options, Callback) ->
         {ok, Pid} ->
             {trans, Pid};
         {error, _} = Error ->
-            psip_log:error("failed to create transaction: ~p", [Error]),
+            psip_log:error("failed to create transaction: ~0p", [Error]),
             {trans, spawn(fun() -> ok end)}
     end.
 
@@ -139,10 +139,10 @@ client_response(Via, Msg) ->
                 Pid when is_pid(Pid) ->
                     gen_server:cast(Pid, {received, SipMsg});
                 _ ->
-                    psip_log:warning("cannot find transaction for request: ~p", [Via])
+                    psip_log:warning("cannot find transaction for request: ~0p", [Via])
             end;
         {error, _} = Error ->
-            psip_log:warning("failed to parse response: ~p", [Error])
+            psip_log:warning("failed to parse response: ~0p", [Error])
     end.
 
 -spec client_cancel(trans()) -> ok.
@@ -226,7 +226,7 @@ init([client, OutReq, Options, Callback]) ->
 
 
 handle_call(Request, _From, State) ->
-    psip_log:error("trans: unexpected call: ~p", [Request]),
+    psip_log:error("trans: unexpected call: ~0p", [Request]),
     {reply, {error, {unexpected_call, Request}}, State}.
 
 handle_cast({process_se, SE}, #state{} = State) ->
@@ -279,7 +279,7 @@ handle_cast({set_owner, Code, Pid}, #state{data = #server{} = Server} = State) -
     OwnerMon = erlang:monitor(process, Pid),
     {noreply, State#state{data = Server#server{owner_mon = OwnerMon, auto_resp = Code}}};
 handle_cast(Request, State) ->
-    psip_log:error("trans: unexpected cast: ~p", [Request]),
+    psip_log:error("trans: unexpected cast: ~0p", [Request]),
     {noreply, State}.
 
 handle_info({'DOWN', Ref, process, Pid, _}, #state{trans = Trans, data = #server{owner_mon = Ref, origmsg = SipMsg}} = State) ->
@@ -300,7 +300,7 @@ handle_info({'DOWN', Ref, process, Pid, _}, #state{trans = Trans, data = #server
             end
     end;
 handle_info({event, TimerEvent}, #state{trans = Trans} = State) ->
-    log_trans(State, "trans: timer fired ~p", [TimerEvent]),
+    log_trans(State, "trans: timer fired ~0p", [TimerEvent]),
     {NewTrans, SE} = ersip_trans:event(TimerEvent, Trans),
     NewState = State#state{trans = NewTrans},
     case process_se_list(SE, State) of
@@ -314,7 +314,7 @@ handle_info(cancel_timeout, #state{data = #client{callback = Callback}} = State)
     Callback({stop, timeout}),
     {stop, normal, State};
 handle_info(Msg, State) ->
-    psip_log:error("trans: unexpected info: ~p", [Msg]),
+    psip_log:error("trans: unexpected info: ~0p", [Msg]),
     {noreply, State}.
 
 terminate(Reason, #state{} = State) ->
@@ -322,7 +322,7 @@ terminate(Reason, #state{} = State) ->
         normal ->
             log_trans(State, "trans: finished", []);
         _ ->
-            psip_log:error("trans: finished with error: ~p", [Reason])
+            psip_log:error("trans: finished with error: ~0p", [Reason])
     end,
     ok.
 
@@ -373,18 +373,18 @@ process_se({tu_result, SipMsg}, #state{data = #client{callback = Callback}}) ->
     Callback({message, SipMsg}),
     continue;
 process_se({set_timer, {Timeout, TimerEvent}}, #state{} = State) ->
-    log_trans(State, "trans: set timer on ~p ms: ~p", [Timeout, TimerEvent]),
+    log_trans(State, "trans: set timer on ~p ms: ~0p", [Timeout, TimerEvent]),
     erlang:send_after(Timeout, self(), {event, TimerEvent}),
     continue;
 process_se({clear_trans, normal}, #state{data = #server{}} = State) ->
     log_trans(State, "trans: transaction cleared: normal", []),
     stop;
 process_se({clear_trans, Reason}, #state{data = #server{handler = Handler}} = State) ->
-    log_trans(State, "trans: transaction cleared: ~p", [Reason]),
+    log_trans(State, "trans: transaction cleared: ~0p", [Reason]),
     psip_handler:transaction_stop({trans, self()}, Reason, Handler),
     stop;
 process_se({clear_trans, Reason}, #state{data = #client{callback = Callback}} = State) ->
-    log_trans(State, "trans: client transaction cleared: ~p", [Reason]),
+    log_trans(State, "trans: client transaction cleared: ~0p", [Reason]),
     Callback({stop, Reason}),
     stop;
 process_se({send_request, OutReq}, #state{} = State) ->

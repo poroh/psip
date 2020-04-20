@@ -196,7 +196,7 @@ init({uac, OutReq, RespSipMsg}) ->
             log_info(State, "started by UAC", []),
             {ok, State};
         {error, _} = Error ->
-            psip_log:warning("dialog ~s: cannot create dialog, error: ~p", [uac_log_id(RespSipMsg), Error]),
+            psip_log:warning("dialog ~s: cannot create dialog, error: ~0p", [uac_log_id(RespSipMsg), Error]),
             {stop, Error}
     end.
 
@@ -224,7 +224,7 @@ handle_call({uac_request, SipMsg}, _From, #state{dialog = Dialog} = State) ->
     NewState  = State#state{dialog = NewDialog},
     {reply, {ok, DlgSipMsg1}, NewState};
 handle_call(Request, _From, State) ->
-    log_error(State, "unexpected call: ~p", [Request]),
+    log_error(State, "unexpected call: ~0p", [Request]),
     {reply, {error, {unexpected_call, Request}}, State}.
 
 handle_cast({uac_early_trans_result, {stop, timeout}}, #state{} = State) ->
@@ -270,11 +270,11 @@ handle_cast({uac_trans_result, {message, RespSipMsg}}, #state{dialog = Dialog} =
             end
     end;
 handle_cast(Request, State) ->
-    log_error(State, "unexpected cast: ~p", [Request]),
+    log_error(State, "unexpected cast: ~0p", [Request]),
     {noreply, State}.
 
 handle_info(Msg, State) ->
-    log_error(State, "unexpected info: ~p", [Msg]),
+    log_error(State, "unexpected info: ~0p", [Msg]),
     {noreply, State}.
 
 terminate(Reason, #state{} = State) ->
@@ -282,7 +282,7 @@ terminate(Reason, #state{} = State) ->
         normal ->
             log_debug(State, "finished", []);
         _ ->
-            log_error(State, "finished with error: ~p", [Reason])
+            log_error(State, "finished with error: ~0p", [Reason])
     end,
     ok.
 
@@ -334,7 +334,7 @@ uas_start_dialog(RespSipMsg, ReqSipMsg) ->
         {ok, DialogPid} ->
             uas_pass_response(DialogPid, RespSipMsg, ReqSipMsg);
         {error, _} = Error ->
-            psip_log:error("dialog ~s: failed to start ~p", [uas_log_id(RespSipMsg), Error]),
+            psip_log:error("dialog ~s: failed to start ~0p", [uas_log_id(RespSipMsg), Error]),
             RespSipMsg
     end.
 
@@ -344,7 +344,7 @@ uac_start_dialog(OutReq, RespSipMsg) ->
     case psip_dialog_sup:start_child([InitArgs]) of
         {ok, _} -> ok;
         {error, _} = Error ->
-            psip_log:error("dialog ~s: failed to start dialog ~p", [uac_log_id(RespSipMsg), Error]),
+            psip_log:error("dialog ~s: failed to start dialog ~0p", [uac_log_id(RespSipMsg), Error]),
             ok
     end.
 
@@ -354,7 +354,7 @@ uas_pass_response(DialogPid, RespSipMsg, ReqSipMsg) ->
         gen_server:call(DialogPid, {uas_pass_response, RespSipMsg, ReqSipMsg})
     catch
         exit:{noproc, _} ->
-            psip_log:warning("dialog ~p is finished, pass response without dialog processing", [DialogPid]),
+            psip_log:warning("dialog ~0p is finished, pass response without dialog processing", [DialogPid]),
             RespSipMsg
     end.
 
@@ -430,7 +430,7 @@ maybe_set_contact(SipMsg, #state{local_contact = LocalContact}) ->
         not_found ->
             ersip_sipmsg:set(contact, LocalContact, SipMsg);
         {error, _} = Error ->
-            psip_log:error("dialog: overriding SIP message has bad contact: ~p", [Error]),
+            psip_log:error("dialog: overriding SIP message has bad contact: ~0p", [Error]),
             ersip_sipmsg:set(contact, LocalContact, SipMsg)
     end.
 

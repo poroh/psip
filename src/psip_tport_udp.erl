@@ -124,7 +124,7 @@ init(StartOpts) ->
     psip_log:notice("udp port: using ~s:~p as external address", [inet:ntoa(ExposedIP), ExposedPort]),
     case gen_udp:open(Port, [binary, {ip, IPAddress}, {active, once}]) of
         {error, _} = Error ->
-            psip_log:error("udp port: failed to open port: ~p", [Error]),
+            psip_log:error("udp port: failed to open port: ~0p", [Error]),
             {stop, Error};
         {ok, Socket} ->
             State = #state{local_ip = ExposedIP,
@@ -144,7 +144,7 @@ handle_call(local_uri, _From, #state{local_ip = LocalIP, local_port = LocalPort}
                           {port, LocalPort}]),
     {reply, URI, State};
 handle_call(Request, _From, State) ->
-    psip_log:error("udp port: unexpected call: ~p", [Request]),
+    psip_log:error("udp port: unexpected call: ~0p", [Request]),
     {reply, {error, {unexpected_call, Request}}, State}.
 
 handle_cast({send_response, SipMsg, RemoteAddr, RemotePort}, State) ->
@@ -156,7 +156,7 @@ handle_cast({send_response, SipMsg, RemoteAddr, RemotePort}, State) ->
     case gen_udp:send(State#state.socket, RemoteAddr, RemotePort, Msg) of
         ok -> ok;
         {error, _} = Error ->
-            psip_log:warning("udp port: failed to send message: ~p", [Error]),
+            psip_log:warning("udp port: failed to send message: ~0p", [Error]),
             ok
     end,
     {noreply, State};
@@ -203,12 +203,12 @@ handle_cast({send_request, OutReq}, State) ->
     case gen_udp:send(State#state.socket, RemoteIP, RemotePort, Msg) of
         ok -> ok;
         {error, _} = Error ->
-            psip_log:warning("udp port: failed to send message: ~p", [Error]),
+            psip_log:warning("udp port: failed to send message: ~0p", [Error]),
             ok
     end,
     {noreply, State};
 handle_cast(Request, State) ->
-    psip_log:error("udp port: unexpected cast: ~p", [Request]),
+    psip_log:error("udp port: unexpected cast: ~0p", [Request]),
     {noreply, State}.
 
 handle_info({udp, Socket, IP, Port, Msg}, #state{socket=Socket} = State) ->
@@ -220,14 +220,14 @@ handle_info({udp, Socket, IP, Port, Msg}, #state{socket=Socket} = State) ->
     ok = inet:setopts(Socket, [{active, once}]),
     {noreply, State};
 handle_info(Msg, State) ->
-    psip_log:error("udp port: unexpected info: ~p", [Msg]),
+    psip_log:error("udp port: unexpected info: ~0p", [Msg]),
     {noreply, State}.
 
 terminate(normal, #state{socket = Socket}) ->
     psip_log:notice("udp port: stopped", []),
     gen_udp:close(Socket);
 terminate(Reason, #state{socket = Socket}) ->
-    psip_log:error("udp port: stopped with reason ~p", [Reason]),
+    psip_log:error("udp port: stopped with reason ~0p", [Reason]),
     gen_udp:close(Socket).
 
 code_change(_OldVsn, State, _Extra) ->
@@ -268,9 +268,9 @@ process_side_effects([E|Rest], State) ->
 
 -spec process_side_effect(ersip_conn_se:side_effect(), state()) -> ok.
 process_side_effect({bad_message, Data, Error}, _State) when is_binary(Data) ->
-    psip_log:warning("udp port: bad message received: ~p~n~s", [Error, Data]);
+    psip_log:warning("udp port: bad message received: ~0p~n~s", [Error, Data]);
 process_side_effect({bad_message, Data, Error}, _State) ->
-    psip_log:warning("udp port: bad message received: ~p~n~s", [Error, ersip_msg:serialize(Data)]);
+    psip_log:warning("udp port: bad message received: ~0p~n~s", [Error, ersip_msg:serialize(Data)]);
 process_side_effect({new_request, Msg}, State) ->
     case State#state.log_messages of
         false ->
@@ -316,5 +316,5 @@ unavailable_resp(Msg) ->
             Resp = ersip_sipmsg:reply(503, SipMsg),
             psip_source:send_response(Resp, SipMsg);
         {error, _} = Error ->
-            psip_log:warning("udp port: cannot parse message: ~p", [Error])
+            psip_log:warning("udp port: cannot parse message: ~0p", [Error])
     end.
