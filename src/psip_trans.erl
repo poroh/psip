@@ -255,6 +255,7 @@ handle_cast(cancel, #state{data = #client{} = Data} = State) ->
     #client{outreq = OutReq} = Data,
     CancelReq = ersip_request_cancel:generate(OutReq),
     _ = client_new(CancelReq, #{}, fun(_) -> ok end),
+    erlang:send_after(timer:seconds(32), self(), cancel_timeout),
     {noreply, State};
 handle_cast({received, SipMsg} = Ev, #state{trans = Trans} = State) ->
     case ersip_sipmsg:type(SipMsg) of
@@ -308,6 +309,10 @@ handle_info({event, TimerEvent}, #state{trans = Trans} = State) ->
         stop ->
             {stop, normal, NewState}
     end;
+handle_info(cancel_timeout, #state{data = #client{callback = Callback}} = State) ->
+    psip_log:warning("trans: remote side did not respond after CANCEL request: terminate", []),
+    Callback({stop, timeout}),
+    {stop, normal, State};
 handle_info(Msg, State) ->
     psip_log:error("trans: unexpected info: ~p", [Msg]),
     {noreply, State}.
