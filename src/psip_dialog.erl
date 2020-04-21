@@ -79,7 +79,7 @@ uas_request(SipMsg) ->
                     try
                         gen_server:call(DialogPid, {uas_request, SipMsg})
                     catch
-                        exit:{noproc, _} ->
+                        exit:{X, _} when X == normal; X == noproc ->
                             Resp = ersip_sipmsg:reply(481, SipMsg),
                             {reply, Resp}
                     end
@@ -353,7 +353,7 @@ uas_pass_response(DialogPid, RespSipMsg, ReqSipMsg) ->
     try
         gen_server:call(DialogPid, {uas_pass_response, RespSipMsg, ReqSipMsg})
     catch
-        exit:{noproc, _} ->
+        exit:{X, _} when X == normal; X == noproc ->
             psip_log:warning("dialog ~0p is finished, pass response without dialog processing", [DialogPid]),
             RespSipMsg
     end.
