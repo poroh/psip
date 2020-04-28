@@ -40,18 +40,19 @@
         {trans      :: ersip_trans:trans(),
          data       :: server() | client(),
          log        :: boolean(),
-         logbranch  :: binary()
+         logbranch  :: binary(),
+         owner_mon  :: reference() | undefined
         }).
 -type state() :: #state{}.
 
 -record(server, {handler :: psip_handler:handler(),
                  origmsg :: ersip_sipmsg:sipmsg(),
-                 owner_mon :: reference() | undefined,
                  auto_resp = 500 :: ersip_status:code()
                 }).
 -type server() :: #server{}.
 -record(client, {outreq   :: ersip_request:request(),
-                 callback :: client_callback()
+                 callback :: client_callback(),
+                 cancelled = false :: boolean()
                 }).
 -type client() :: #client{}.
 
@@ -222,7 +223,13 @@ init([client, OutReq, Options, Callback]) ->
     RURI   = ersip_uri:assemble(ersip_sipmsg:ruri(SipMsg)),
     CallId = ersip_hdr_callid:assemble(ersip_sipmsg:callid(SipMsg)),
     psip_log:info("trans: client: ~s ~s; call-id: ~s; branch: ~s", [Method, RURI, CallId, Branch]),
-    {ok, State}.
+    case maps:get(owner, Options, undefined) of
+        Pid when is_pid(Pid) ->
+            OwnerMon = erlang:monitor(process, Pid),
+            {ok, State#state{owner_mon = OwnerMon}};
+        undefined ->
+            {ok, State}
+    end.
 
 
 handle_call(Request, _From, State) ->
@@ -250,13 +257,16 @@ handle_cast(cancel, #state{data = #server{handler = Handler}} = State) ->
     log_trans(State, "trans: canceling server transaction", []),
     psip_uas:process_cancel(make_trans(), Handler),
     {noreply, State};
-handle_cast(cancel, #state{data = #client{} = Data} = State) ->
+handle_cast(cancel, #state{data = #client{cancelled = true}} = State) ->
+    log_trans(State, "trans: transaction is already cancelled", []),
+    {noreply, State};
+handle_cast(cancel, #state{data = #client{cancelled = false} = Data} = State) ->
     log_trans(State, "trans: canceling client transaction", []),
     #client{outreq = OutReq} = Data,
     CancelReq = ersip_request_cancel:generate(OutReq),
     _ = client_new(CancelReq, #{}, fun(_) -> ok end),
     erlang:send_after(timer:seconds(32), self(), cancel_timeout),
-    {noreply, State};
+    {noreply, State#state{data = Data#client{cancelled = true}}};
 handle_cast({received, SipMsg} = Ev, #state{trans = Trans} = State) ->
     case ersip_sipmsg:type(SipMsg) of
         request -> ok;
@@ -277,12 +287,12 @@ handle_cast({received, SipMsg} = Ev, #state{trans = Trans} = State) ->
 handle_cast({set_owner, Code, Pid}, #state{data = #server{} = Server} = State) ->
     log_trans(State, "trans: set owner to: ~p with code: ~p", [Pid, Code]),
     OwnerMon = erlang:monitor(process, Pid),
-    {noreply, State#state{data = Server#server{owner_mon = OwnerMon, auto_resp = Code}}};
+    {noreply, State#state{owner_mon = OwnerMon, data = Server#server{auto_resp = Code}}};
 handle_cast(Request, State) ->
     psip_log:error("trans: unexpected cast: ~0p", [Request]),
     {noreply, State}.
 
-handle_info({'DOWN', Ref, process, Pid, _}, #state{trans = Trans, data = #server{owner_mon = Ref, origmsg = SipMsg}} = State) ->
+handle_info({'DOWN', Ref, process, Pid, _}, #state{trans = Trans, owner_mon = Ref, data = #server{origmsg = SipMsg}} = State) ->
     case ersip_trans:has_final_response(Trans) of
         true ->
             {noreply, State};
@@ -299,6 +309,14 @@ handle_info({'DOWN', Ref, process, Pid, _}, #state{trans = Trans, data = #server
                     {stop, normal, NewState}
             end
     end;
+handle_info({'DOWN', Ref, process, Pid, _}, #state{owner_mon = Ref, data = #client{outreq = OutReq}} = State) ->
+    case ersip_sipmsg:method_bin(ersip_request:sipmsg(OutReq)) of
+        <<"INVITE">> ->
+            log_trans(State, "trans: owner is dead: ~p: cancel transaction", [Pid]),
+            gen_server:cast(self(), cancel);
+        _ -> ok
+    end,
+    {noreply, State};
 handle_info({event, TimerEvent}, #state{trans = Trans} = State) ->
     log_trans(State, "trans: timer fired ~0p", [TimerEvent]),
     {NewTrans, SE} = ersip_trans:event(TimerEvent, Trans),

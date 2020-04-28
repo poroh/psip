@@ -17,7 +17,8 @@
          uas_response/2,
          uac_request/2,
          uac_result/2,
-         count/0
+         count/0,
+         set_owner/2
         ]).
 
 %% gen_server
@@ -38,7 +39,10 @@
                 dialog :: ersip_dialog:dialog(),
                 local_contact :: [ersip_hdr_contact:contact()],
                 early_branch  :: ersip_branch:branch() | undefined,
-                log_id :: string()
+                log_id :: string(),
+                dialog_type :: type(),
+                need_cleanup = true :: boolean(),
+                owner_mon  :: reference() | undefined
                }).
 -type state() :: #state{}.
 
@@ -47,6 +51,7 @@
                           {error, term()}.
 -type trans() :: {trans, pid()}.
 -type dialog_handle() :: pid().
+-type type() :: invite | notify.
 
 %%===================================================================
 %% API
@@ -126,6 +131,15 @@ uac_result(OutReq, TransResult) ->
             end
     end.
 
+-spec set_owner(pid(), ersip_dialog:id()) -> ok.
+set_owner(Pid, DialogId) when is_pid(Pid) ->
+    case find_dialog(DialogId) of
+        {ok, DialogPid} ->
+            gen_server:cast(DialogPid, {set_owner, Pid});
+        not_found ->
+            ok
+    end.
+
 -spec count() -> non_neg_integer().
 count() ->
     psip_dialog_sup:num_active().
@@ -167,7 +181,8 @@ init({uas, RespSipMsg, ReqSipMsg}) ->
     State = #state{id     = DialogId,
                    dialog = ersip_dialog:uas_create(ReqSipMsg, RespSipMsg),
                    local_contact = ersip_sipmsg:get(contact, RespSipMsg),
-                   log_id = uas_log_id(RespSipMsg)
+                   log_id = uas_log_id(RespSipMsg),
+                   dialog_type = dialog_type(ReqSipMsg)
                   },
     log_info(State, "started by UAS", []),
     {ok, State};
@@ -191,7 +206,8 @@ init({uac, OutReq, RespSipMsg}) ->
                            dialog       = Dialog,
                            local_contact = ersip_sipmsg:get(contact, OutSipMsg),
                            early_branch = EarlyBranch,
-                           log_id       = uac_log_id(RespSipMsg)
+                           log_id       = uac_log_id(RespSipMsg),
+                           dialog_type  = dialog_type(OutSipMsg)
                           },
             log_info(State, "started by UAC", []),
             {ok, State};
@@ -204,7 +220,10 @@ handle_call({uas_request, SipMsg}, _From, #state{dialog = Dialog} = State) ->
     ReqType = request_type(SipMsg),
     case ersip_dialog:uas_process(SipMsg, ReqType, Dialog) of
         {ok, Dialog1} ->
-            {reply, process, State#state{dialog = Dialog1}};
+            NewState =
+                State#state{dialog = Dialog1,
+                            need_cleanup = update_need_cleanup(State, SipMsg)},
+            {reply, process, NewState};
         {reply, _} = Reply ->
             {reply, Reply, State}
     end;
@@ -221,7 +240,10 @@ handle_call({uas_pass_response, RespSipMsg, ReqSipMsg}, _From, #state{dialog = D
     end;
 handle_call({uac_request, SipMsg}, _From, #state{dialog = Dialog} = State) ->
     {NewDialog, DlgSipMsg1} = ersip_dialog:uac_request(SipMsg, Dialog),
-    NewState  = State#state{dialog = NewDialog},
+    NewState =
+        State#state{dialog = NewDialog,
+                    need_cleanup = update_need_cleanup(State, SipMsg)
+                   },
     {reply, {ok, DlgSipMsg1}, NewState};
 handle_call(Request, _From, State) ->
     log_error(State, "unexpected call: ~0p", [Request]),
@@ -269,10 +291,32 @@ handle_cast({uac_trans_result, {message, RespSipMsg}}, #state{dialog = Dialog} =
                     {noreply, NewState}
             end
     end;
+handle_cast({set_owner, Pid}, #state{} = State) ->
+    log_debug(State, "set owner to ~p", [Pid]),
+    OwnerMon = erlang:monitor(process, Pid),
+    {noreply, State#state{owner_mon = OwnerMon}};
 handle_cast(Request, State) ->
     log_error(State, "unexpected cast: ~0p", [Request]),
     {noreply, State}.
 
+handle_info({'DOWN', Ref, process, Pid, _}, #state{owner_mon = Ref, need_cleanup = true} = State) ->
+    case ersip_dialog:is_early(State#state.dialog) of
+        true ->
+            log_warning(State, "owner of early dialog is died: ~p; stop dialog", [Pid]),
+            {noreply, State};
+        false ->
+            log_warning(State, "owner of confirmed dialog is died: ~p; destroy dialog gracefully", [Pid]),
+            case State#state.dialog_type of
+                invite ->
+                    ByeReq0 = create_bye(),
+                    {NewDialog, ByeReq} = ersip_dialog:uac_request(ByeReq0, State#state.dialog),
+                    _ = psip_uac:request(ByeReq, fun(_) -> ok end),
+                    {noreply, State#state{dialog = NewDialog}};
+                notify -> error(not_supported_yet)
+            end
+    end;
+handle_info({'DOWN', _Ref, process, _Pid, _}, #state{owner_mon = _} = State) ->
+    {noreply, State};
 handle_info(Msg, State) ->
     log_error(State, "unexpected info: ~0p", [Msg]),
     {noreply, State}.
@@ -472,6 +516,37 @@ uas_log_id(SipMsg) ->
     RemoteTag = log_tag(ersip_sipmsg:from(SipMsg)),
     LocalTag  = log_tag(ersip_sipmsg:to(SipMsg)),
     io_lib:format("~s ~s ~s", [CallId, LocalTag, RemoteTag]).
+
+-spec dialog_type(ersip_sipmsg:sipmsg()) -> type().
+dialog_type(SipMsg) ->
+    INVITE = ersip_method:invite(),
+    NOTIFY = ersip_method:notify(),
+    case ersip_sipmsg:method(SipMsg) of
+        INVITE -> invite;
+        NOTIFY -> notify;
+        M -> error({unexpected_method, M})
+    end.
+
+-spec create_bye() -> ok.
+create_bye() ->
+    SipMsg0 = ersip_sipmsg:new_request(ersip_method:bye(), ersip_uri:make(<<"sip:domain.invalid">>)),
+    ersip_sipmsg:set(maxforwards, ersip_hdr_maxforwards:make(70), SipMsg0).
+
+-spec update_need_cleanup(state(), ersip_sipmsg:sipmsg()) -> boolean().
+update_need_cleanup(#state{need_cleanup = false}, _SipMsg) ->
+    false;
+update_need_cleanup(#state{need_cleanup = true, dialog_type = invite}, SipMsg) ->
+    ersip_sipmsg:method(SipMsg) /= ersip_method:bye();
+update_need_cleanup(#state{need_cleanup = true, dialog_type = notify}, SipMsg) ->
+    case ersip_sipmsg:find(subscription_state, SipMsg) of
+        {ok, SubsState} ->
+            ersip_hdr_subscription_state:subs_state(SubsState) /= terminated;
+        _ ->
+            true
+    end.
+
+
+
 
 -spec log_debug(state(), string(), list()) -> ok.
 log_debug(#state{log_id = LogId}, Format, Args) ->

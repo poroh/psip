@@ -25,7 +25,9 @@
 -type callback() :: fun((client_trans_result()) -> any()).
 -type client_trans_result() :: psip_trans:client_result().
 -type id() :: {uac_id, psip_trans:trans()}.
--type options() :: #{sip => ersip:sip_options()}.
+-type options() :: #{sip => ersip:sip_options(),
+                     owner => pid()
+                    }.
 
 -export_type([id/0, callback/0]).
 
