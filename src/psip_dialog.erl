@@ -527,7 +527,7 @@ dialog_type(SipMsg) ->
         M -> error({unexpected_method, M})
     end.
 
--spec create_bye() -> ok.
+-spec create_bye() -> ersip_sipmsg:sipmsg().
 create_bye() ->
     SipMsg0 = ersip_sipmsg:new_request(ersip_method:bye(), ersip_uri:make(<<"sip:domain.invalid">>)),
     ersip_sipmsg:set(maxforwards, ersip_hdr_maxforwards:make(70), SipMsg0).
@@ -540,7 +540,7 @@ update_need_cleanup(#state{need_cleanup = true, dialog_type = invite}, SipMsg) -
 update_need_cleanup(#state{need_cleanup = true, dialog_type = notify}, SipMsg) ->
     case ersip_sipmsg:find(subscription_state, SipMsg) of
         {ok, SubsState} ->
-            ersip_hdr_subscription_state:subs_state(SubsState) /= terminated;
+            ersip_hdr_subscription_state:value(SubsState) /= terminated;
         _ ->
             true
     end.
