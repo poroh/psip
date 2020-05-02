@@ -309,11 +309,15 @@ handle_info({'DOWN', Ref, process, Pid, _}, #state{trans = Trans, owner_mon = Re
                     {stop, normal, NewState}
             end
     end;
-handle_info({'DOWN', Ref, process, Pid, _}, #state{owner_mon = Ref, data = #client{outreq = OutReq}} = State) ->
+handle_info({'DOWN', Ref, process, Pid, _}, #state{trans = Trans, owner_mon = Ref, data = #client{outreq = OutReq}} = State) ->
     case ersip_sipmsg:method_bin(ersip_request:sipmsg(OutReq)) of
         <<"INVITE">> ->
-            log_trans(State, "trans: owner is dead: ~p: cancel transaction", [Pid]),
-            gen_server:cast(self(), cancel);
+            case ersip_trans:has_final_response(Trans) of
+                true -> ok;
+                false ->
+                    log_trans(State, "trans: owner is dead: ~p: cancel transaction", [Pid]),
+                    gen_server:cast(self(), cancel)
+            end;
         _ -> ok
     end,
     {noreply, State};
