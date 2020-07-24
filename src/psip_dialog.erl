@@ -264,7 +264,8 @@ handle_cast({uac_early_trans_result, {message, RespSipMsg}}, #state{dialog = Dia
                 case need_unregister_branch_name(NewDialog, State) of
                     false -> State#state{dialog = NewDialog};
                     true ->
-                        gproc:unregister_name({n, l, {?MODULE, State#state.early_branch}}),
+                        BranchKey = ersip_branch:make_key(State#state.early_branch),
+                        gproc:unregister_name({n, l, {?MODULE, BranchKey}}),
                         State#state{dialog = NewDialog, early_branch = undefined}
                 end,
             {noreply, NewState}
