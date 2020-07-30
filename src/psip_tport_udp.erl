@@ -43,7 +43,8 @@
                 local_port   :: inet:port_number(),
                 socket       :: gen_udp:socket(),
                 handler      :: psip_handler:handler() | undefined,
-                log_messages :: boolean()
+                log_messages :: boolean(),
+                max_burst    :: non_neg_integer()
                }).
 -type state() :: #state{}.
 -type start_link_ret() :: {ok, pid()} |
@@ -56,7 +57,8 @@
     exposed_addr => inet:ip_address(),
     exposed_port => inet:port_number(),
     handler      => psip_handler:handler(),
-    log_messages => boolean()
+    log_messages => boolean(),
+    max_burst    => non_neg_integer()
 }.
 
 %%%===================================================================
@@ -121,8 +123,9 @@ init(StartOpts) ->
     ExposedIP = maps:get(exposed_addr, StartOpts, IPAddress),
     ExposedPort = maps:get(exposed_port, StartOpts, Port),
     Handler = maps:get(handler, StartOpts, undefined),
+    MaxBurst = maps:get(max_burst, StartOpts, 10),
     psip_log:notice("udp port: using ~s:~p as external address", [inet:ntoa(ExposedIP), ExposedPort]),
-    case gen_udp:open(Port, [binary, {ip, IPAddress}, {active, once}]) of
+    case gen_udp:open(Port, [binary, {ip, IPAddress}, {active, MaxBurst}]) of
         {error, _} = Error ->
             psip_log:error("udp port: failed to open port: ~0p", [Error]),
             {stop, Error};
@@ -131,7 +134,8 @@ init(StartOpts) ->
                            local_port = ExposedPort,
                            socket = Socket,
                            handler = Handler,
-                           log_messages = maps:get(log_messages, StartOpts, false)
+                           log_messages = maps:get(log_messages, StartOpts, false),
+                           max_burst = MaxBurst
                           },
             {ok, State}
     end.
@@ -217,7 +221,9 @@ handle_info({udp, Socket, IP, Port, Msg}, #state{socket=Socket} = State) ->
         false -> ok
     end,
     recv_message(IP, Port, Msg, State),
-    ok = inet:setopts(Socket, [{active, once}]),
+    {noreply, State};
+handle_info({udp_passive, Socket}, #state{socket=Socket} = State) ->
+    ok = inet:setopts(Socket, [{active, State#state.max_burst}]),
     {noreply, State};
 handle_info(Msg, State) ->
     psip_log:error("udp port: unexpected info: ~0p", [Msg]),
