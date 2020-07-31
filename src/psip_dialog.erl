@@ -67,7 +67,7 @@ uas_find(ReqSipMsg) ->
 
 -spec start_link(term()) -> start_link_ret().
 start_link(Args) ->
-    gen_server:start_link(?MODULE, Args, []).
+    gen_server:start_link(?MODULE, Args, [{hibernate_after, 1000}]).
 
 -spec uas_request(ersip_sipmsg:sipmsg()) -> process | {reply, ersip_sipmsg:sipmsg()}.
 uas_request(SipMsg) ->

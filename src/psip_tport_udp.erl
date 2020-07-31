@@ -43,7 +43,8 @@
                 local_port   :: inet:port_number(),
                 socket       :: gen_udp:socket(),
                 handler      :: psip_handler:handler() | undefined,
-                log_messages :: boolean()
+                log_messages :: boolean(),
+                max_burst    :: non_neg_integer()
                }).
 -type state() :: #state{}.
 -type start_link_ret() :: {ok, pid()} |
@@ -56,7 +57,8 @@
     exposed_addr => inet:ip_address(),
     exposed_port => inet:port_number(),
     handler      => psip_handler:handler(),
-    log_messages => boolean()
+    log_messages => boolean(),
+    max_burst    => non_neg_integer()
 }.
 
 %%%===================================================================
@@ -81,7 +83,52 @@ local_uri() ->
 
 -spec send_request(ersip_request:request()) -> ok.
 send_request(OutReq) ->
-    gen_server:cast(?SERVER, {send_request, OutReq}).
+    SendOpts = gen_server:call(?SERVER, send_opts),
+    NextHop = ersip_request:nexthop(OutReq),
+    Host = ersip_uri:host(NextHop),
+    {RemoteIP, RemotePort} =
+        case ersip_host:is_ip_address(Host) of
+            true ->
+                Port = case ersip_uri:port(NextHop) of
+                           undefined -> 5060;
+                           X -> X
+                       end,
+                {ersip_host:ip_address(Host), Port};
+            false ->
+                case ersip_uri:port(NextHop) of
+                    undefined ->
+                        psip_log:warning("udp port: srv DNS lookup is not supported yet", []),
+                        {{240, 0, 0, 1}, 5060};
+                    Port ->
+                        HostStr = binary_to_list(ersip_host:assemble_bin(Host)),
+                        case inet_res:lookup(HostStr, in, a) of
+                            [IP | _Rest] ->
+                                {IP, Port};
+                            [] ->
+                                psip_log:warning("udp port: DNS lookup failed: ~s", [HostStr]),
+                                {{240, 0, 0, 1}, 5060}
+                        end
+                end
+        end,
+    Conn = ersip_conn:new(maps:get(exposed_addr, SendOpts),
+                          maps:get(exposed_port, SendOpts),
+                          RemoteIP,
+                          RemotePort,
+                          ersip_transport:udp(),
+                          #{}),
+    Msg = ersip_request:send_via_conn(OutReq, Conn),
+    case maps:get(log_messages, SendOpts) of
+        true -> psip_log:debug("udp port: send: ~s:~p:~n~s", [inet:ntoa(RemoteIP), RemotePort, Msg]);
+        false ->
+            SipMsg = ersip_request:sipmsg(OutReq),
+            psip_log:debug("udp port: send: ~s:~b; ~s ~s", [inet:ntoa(RemoteIP), RemotePort, ersip_sipmsg:method_bin(SipMsg), ersip_uri:assemble_bin(ersip_sipmsg:ruri(SipMsg))])
+    end,
+    case gen_udp:send(maps:get(socket, SendOpts), RemoteIP, RemotePort, Msg) of
+        ok -> ok;
+        {error, _} = Error ->
+            psip_log:warning("udp port: failed to send message: ~0p", [Error]),
+            ok
+    end.
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -121,8 +168,9 @@ init(StartOpts) ->
     ExposedIP = maps:get(exposed_addr, StartOpts, IPAddress),
     ExposedPort = maps:get(exposed_port, StartOpts, Port),
     Handler = maps:get(handler, StartOpts, undefined),
+    MaxBurst = maps:get(max_burst, StartOpts, 10),
     psip_log:notice("udp port: using ~s:~p as external address", [inet:ntoa(ExposedIP), ExposedPort]),
-    case gen_udp:open(Port, [binary, {ip, IPAddress}, {active, once}]) of
+    case gen_udp:open(Port, [binary, {ip, IPAddress}, {active, MaxBurst}]) of
         {error, _} = Error ->
             psip_log:error("udp port: failed to open port: ~0p", [Error]),
             {stop, Error};
@@ -131,7 +179,8 @@ init(StartOpts) ->
                            local_port = ExposedPort,
                            socket = Socket,
                            handler = Handler,
-                           log_messages = maps:get(log_messages, StartOpts, false)
+                           log_messages = maps:get(log_messages, StartOpts, false),
+                           max_burst = MaxBurst
                           },
             {ok, State}
     end.
@@ -143,70 +192,17 @@ handle_call(local_uri, _From, #state{local_ip = LocalIP, local_port = LocalPort}
     URI = ersip_uri:make([{host, ersip_host:make(LocalIP)},
                           {port, LocalPort}]),
     {reply, URI, State};
+handle_call(send_opts, _From, State) ->
+    SendOpts = #{exposed_addr => State#state.local_ip,
+                 exposed_port => State#state.local_port,
+                 log_messages => State#state.log_messages,
+                 socket       => State#state.socket
+                },
+    {reply, SendOpts, State};
 handle_call(Request, _From, State) ->
     psip_log:error("udp port: unexpected call: ~0p", [Request]),
     {reply, {error, {unexpected_call, Request}}, State}.
 
-handle_cast({send_response, SipMsg, RemoteAddr, RemotePort}, State) ->
-    Msg = ersip_sipmsg:assemble(SipMsg),
-    case State#state.log_messages of
-        true ->  psip_log:debug("udp port: send: ~s:~b:~n~s", [inet:ntoa(RemoteAddr), RemotePort, Msg]);
-        false -> psip_log:debug("udp port: send: ~s:~b: ~b ~s", [inet:ntoa(RemoteAddr), RemotePort, ersip_sipmsg:status(SipMsg), ersip_sipmsg:reason(SipMsg)])
-    end,
-    case gen_udp:send(State#state.socket, RemoteAddr, RemotePort, Msg) of
-        ok -> ok;
-        {error, _} = Error ->
-            psip_log:warning("udp port: failed to send message: ~0p", [Error]),
-            ok
-    end,
-    {noreply, State};
-handle_cast({send_request, OutReq}, State) ->
-    NextHop = ersip_request:nexthop(OutReq),
-    Host  = ersip_uri:host(NextHop),
-    {RemoteIP, RemotePort} =
-        case ersip_host:is_ip_address(Host) of
-            true ->
-                Port = case ersip_uri:port(NextHop) of
-                           undefined -> 5060;
-                           X -> X
-                       end,
-                {ersip_host:ip_address(Host), Port};
-            false ->
-                case ersip_uri:port(NextHop) of
-                    undefined ->
-                        psip_log:warning("udp port: srv DNS lookup is not supported yet", []),
-                        {{240, 0, 0, 1}, 5060};
-                    Port ->
-                        HostStr = binary_to_list(ersip_host:assemble_bin(Host)),
-                        case inet_res:lookup(HostStr, in, a) of
-                            [IP | _Rest] ->
-                                {IP, Port};
-                            [] ->
-                                psip_log:warning("udp port: DNS lookup failed: ~s", [HostStr]),
-                                {{240, 0, 0, 1}, 5060}
-                        end
-                end
-        end,
-    Conn = ersip_conn:new(State#state.local_ip,
-                          State#state.local_port,
-                          RemoteIP,
-                          RemotePort,
-                          ersip_transport:udp(),
-                          #{}),
-    Msg = ersip_request:send_via_conn(OutReq, Conn),
-    case State#state.log_messages of
-        true -> psip_log:debug("udp port: send: ~s:~p:~n~s", [inet:ntoa(RemoteIP), RemotePort, Msg]);
-        false ->
-            SipMsg = ersip_request:sipmsg(OutReq),
-            psip_log:debug("udp port: send: ~s:~b; ~s ~s", [inet:ntoa(RemoteIP), RemotePort, ersip_sipmsg:method_bin(SipMsg), ersip_uri:assemble_bin(ersip_sipmsg:ruri(SipMsg))])
-    end,
-    case gen_udp:send(State#state.socket, RemoteIP, RemotePort, Msg) of
-        ok -> ok;
-        {error, _} = Error ->
-            psip_log:warning("udp port: failed to send message: ~0p", [Error]),
-            ok
-    end,
-    {noreply, State};
 handle_cast(Request, State) ->
     psip_log:error("udp port: unexpected cast: ~0p", [Request]),
     {noreply, State}.
@@ -217,7 +213,9 @@ handle_info({udp, Socket, IP, Port, Msg}, #state{socket=Socket} = State) ->
         false -> ok
     end,
     recv_message(IP, Port, Msg, State),
-    ok = inet:setopts(Socket, [{active, once}]),
+    {noreply, State};
+handle_info({udp_passive, Socket}, #state{socket=Socket} = State) ->
+    ok = inet:setopts(Socket, [{active, State#state.max_burst}]),
     {noreply, State};
 handle_info(Msg, State) ->
     psip_log:error("udp port: unexpected info: ~0p", [Msg]),
@@ -239,7 +237,18 @@ code_change(_OldVsn, State, _Extra) ->
 
 -spec send_response(ersip_sipmsg:sipmsg(), source_options()) -> ok.
 send_response(SipMsg, {RemoteAddr, RemotePort}) ->
-    gen_server:cast(?SERVER, {send_response, SipMsg, RemoteAddr, RemotePort}).
+    SendOpts = gen_server:call(?SERVER, send_opts),
+    Msg = ersip_sipmsg:assemble(SipMsg),
+    case maps:get(log_messages, SendOpts) of
+        true ->  psip_log:debug("udp port: send: ~s:~b:~n~s", [inet:ntoa(RemoteAddr), RemotePort, Msg]);
+        false -> psip_log:debug("udp port: send: ~s:~b: ~b ~s", [inet:ntoa(RemoteAddr), RemotePort, ersip_sipmsg:status(SipMsg), ersip_sipmsg:reason(SipMsg)])
+    end,
+    case gen_udp:send(maps:get(socket, SendOpts), RemoteAddr, RemotePort, Msg) of
+        ok -> ok;
+        {error, _} = Error ->
+            psip_log:warning("udp port: failed to send message: ~0p", [Error]),
+            ok
+    end.
 
 %%%===================================================================
 %%% Internal implementation
