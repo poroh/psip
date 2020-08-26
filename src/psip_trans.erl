@@ -331,9 +331,13 @@ handle_info({event, TimerEvent}, #state{trans = Trans} = State) ->
         stop ->
             {stop, normal, NewState}
     end;
-handle_info(cancel_timeout, #state{data = #client{callback = Callback}} = State) ->
-    psip_log:warning("trans: remote side did not respond after CANCEL request: terminate", []),
-    Callback({stop, timeout}),
+handle_info(cancel_timeout, #state{trans = Trans, data = #client{callback = Callback}} = State) ->
+    case ersip_trans:has_final_response(Trans) of
+        true -> ok;
+        false ->
+            psip_log:warning("trans: remote side did not respond after CANCEL request: terminate", []),
+            Callback({stop, timeout})
+        end,
     {stop, normal, State};
 handle_info(Msg, State) ->
     psip_log:error("trans: unexpected info: ~0p", [Msg]),
