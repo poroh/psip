@@ -284,10 +284,16 @@ handle_cast({received, SipMsg} = Ev, #state{trans = Trans} = State) ->
         stop ->
             {stop, normal, NewState}
     end;
-handle_cast({set_owner, Code, Pid}, #state{data = #server{} = Server} = State) ->
+handle_cast({set_owner, Code, Pid}, #state{owner_mon = Ref, data = #server{} = Server} = State) ->
     log_trans(State, "trans: set owner to: ~p with code: ~p", [Pid, Code]),
-    OwnerMon = erlang:monitor(process, Pid),
-    {noreply, State#state{owner_mon = OwnerMon, data = Server#server{auto_resp = Code}}};
+    case Ref of
+        undefined ->
+            ok;
+        _ ->
+            erlang:demonitor(Ref, [flush])
+    end,
+    NewRef = erlang:monitor(process, Pid),
+    {noreply, State#state{owner_mon = NewRef, data = Server#server{auto_resp = Code}}};
 handle_cast(Request, State) ->
     psip_log:error("trans: unexpected cast: ~0p", [Request]),
     {noreply, State}.
